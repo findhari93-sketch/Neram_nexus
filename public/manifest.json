@@ -1,0 +1,41 @@
+{
+  "short_name": "Neram Admin",
+  "name": "Neram Admin Panel",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#ffffff",
+  "appRoles": [
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Admins can manage everything.",
+      "displayName": "Admin",
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "isEnabled": true,
+      "value": "Admin"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Teachers can manage classes.",
+      "displayName": "Teacher",
+      "id": "b2c3d4e5-f6g7-8901-bcde-f23456789012",
+      "isEnabled": true,
+      "value": "Teacher"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Students can view their content.",
+      "displayName": "Student",
+      "id": "c3d4e5f6-g7h8-9012-cdef-345678901234",
+      "isEnabled": true,
+      "value": "Student"
+    }
+  ]
+}

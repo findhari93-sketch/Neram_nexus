@@ -1,0 +1,154 @@
+/* Clean, modern AG Grid styling */
+.ag-theme-quartz.app-grid-theme {
+  --ag-wrapper-border-radius: 12px;
+  --ag-border-color: #e2e8f0;
+  --ag-row-border-color: #eef2f6;
+  --ag-header-column-resize-handle-color: #c4d0dd;
+  --ag-header-background-color: #f5f8fb;
+  --ag-odd-row-background-color: #fafbfc;
+  --ag-selected-row-background-color: #e3f2fd;
+  --ag-row-hover-color: #f0f7ff;
+  --ag-font-size: 13px;
+  --ag-font-family: Inter, system-ui, sans-serif;
+}
+
+.app-grid-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+}
+
+.app-grid-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px 8px 16px;
+}
+
+.app-grid-toolbar .spacer {
+  flex: 1 1 auto;
+}
+
+.app-grid-quick-filter {
+  min-width: 220px;
+}
+
+/* Header */
+.ag-theme-quartz.app-grid-theme .ag-header-group-cell-label,
+.ag-theme-quartz.app-grid-theme .ag-header-cell-label {
+  font-weight: 600;
+  letter-spacing: 0.25px;
+}
+
+/* Cells */
+.ag-theme-quartz.app-grid-theme .ag-cell {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Hover & Selection */
+.ag-theme-quartz.app-grid-theme .ag-row-hover .ag-cell:not(.ag-cell-focus) {
+  background: var(--ag-row-hover-color);
+}
+.ag-theme-quartz.app-grid-theme .ag-row-selected .ag-cell {
+  background: var(--ag-selected-row-background-color) !important;
+}
+
+/* Zebra striping handled by odd-row variable above */
+
+/* Pinned column subtle shadow */
+.ag-theme-quartz.app-grid-theme.has-h-scroll-left .ag-pinned-left-header,
+.ag-theme-quartz.app-grid-theme.has-h-scroll-left
+  .ag-pinned-left-cols-container {
+  box-shadow: 4px 0 6px -2px rgba(0, 0, 0, 0.08);
+  z-index: 3;
+}
+
+/* Resize handle refinement */
+.ag-theme-quartz.app-grid-theme .ag-header-cell-resize::after {
+  display: none;
+}
+.ag-theme-quartz.app-grid-theme .ag-header-cell-resize {
+  width: 1px;
+  background: #d9e2ec;
+}
+
+/* Floating filter inputs */
+.ag-theme-quartz.app-grid-theme .ag-floating-filter .ag-input-field-input {
+  height: 28px !important;
+  padding: 2px 8px;
+  font-size: 13px;
+}
+.ag-theme-quartz.app-grid-theme .ag-header-row.ag-floating-filter {
+  background: #f0f4f8;
+  min-height: 36px;
+  border-top: 1px solid #e2e8f0;
+}
+.ag-theme-quartz.app-grid-theme
+  .ag-header-row.ag-floating-filter
+  .ag-header-cell {
+  padding: 2px 4px;
+}
+.ag-theme-quartz.app-grid-theme .ag-floating-filter-button {
+  display: none;
+}
+.ag-theme-quartz.app-grid-theme
+  .ag-floating-filter
+  .ag-input-field-input:focus {
+  outline: none;
+  border-color: #2684ff;
+  box-shadow: 0 0 0 2px rgba(38, 132, 255, 0.15);
+}
+
+/* Pagination panel */
+.ag-theme-quartz.app-grid-theme .ag-paging-panel {
+  border-top: 1px solid #e2e8f0;
+  background: #f6f9fb;
+  font-size: 12px;
+  padding-right: 8px;
+}
+
+/* Utility: fade in row actions */
+.app-grid-row-actions {
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: 0.15s ease;
+}
+.ag-theme-quartz.app-grid-theme .ag-row-hover .app-grid-row-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Edit icon hover reveal */
+.app-grid-edit-icon .MuiIconButton-root {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.ag-theme-quartz.app-grid-theme
+  .ag-row-hover
+  .app-grid-edit-icon
+  .MuiIconButton-root {
+  opacity: 1;
+}
+
+/* Compact checkbox alignment */
+.ag-theme-quartz.app-grid-theme
+  .ag-center-cols-container
+  .ag-cell.ag-selection-checkbox {
+  justify-content: center;
+}
+
+/* Quick filter input (MUI integration expected) */
+.app-grid-quick-filter .MuiOutlinedInput-input {
+  padding: 6px 10px;
+  font-size: 13px;
+}
