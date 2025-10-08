@@ -41,6 +41,7 @@ export default function BigDrawer({
           display: "flex",
           flexDirection: "column",
           height: "100vh",
+          zIndex: theme.zIndex.drawer + 2,
         },
       }}
     >

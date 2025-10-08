@@ -1,10 +1,10 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { Box } from "@mui/material";
-import AppAgGrid from "../../components/EnquiryDataGrid/AppAgGrid";
+import AppAgGrid from "../../components/EnquiryDataGrid/EnquiryTable";
 import {
   AddEnquiry,
   EditEnquiry,
-} from "../../components/EnquiryDataGrid/Enquiry";
+} from "../../components/EnquiryDataGrid/DrawerAddEdit";
 
 const Enquiries = () => {
   // Editable demo data

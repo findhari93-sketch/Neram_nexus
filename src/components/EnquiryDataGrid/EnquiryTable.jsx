@@ -9,7 +9,7 @@ import React, {
 import { AgGridReact } from "ag-grid-react";
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
-import "./AppAgGrid.css";
+import "./EnquiryTable.css";
 import {
   Box,
   TextField,
@@ -27,9 +27,9 @@ import {
   ListItem,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
-import ActionModeToolbar from "./ActionModeToolbar";
-import DefaultToolbar from "./DefaultToolbar";
-import FlipHeader from "./FlipHeader";
+import ActionModeToolbar from "./TopGridToolbar/ActionModeToolbar";
+import DefaultToolbar from "./TopGridToolbar/DefaultToolbar";
+import FlipHeader from "./TopGridToolbar/FlipHeader";
 
 /**
  * Reusable AG Grid Wrapper

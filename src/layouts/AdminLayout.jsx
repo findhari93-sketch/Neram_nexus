@@ -15,7 +15,10 @@ import {
   TableChart,
 } from "@mui/icons-material";
 import SidebarItem from "../components/SidebarItem";
-import TopNavHeader from "../components/Shared/Header/TopNavHeader";
+import TopNavHeader, {
+  HEADER_HEIGHT_XS,
+  HEADER_HEIGHT_SM,
+} from "../components/Shared/AppHeader/TopNavHeader";
 
 const drawerWidth = 240;
 const collapsedWidth = 50;
@@ -23,7 +26,8 @@ const collapsedWidth = 50;
 const AdminLayout = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  // const { instance, accounts } = useMsal();
+
+  const headerHeight = { xs: HEADER_HEIGHT_XS, sm: HEADER_HEIGHT_SM };
 
   // Sidebar state management
   const [open, setOpen] = useState(() => {
@@ -130,6 +134,7 @@ const AdminLayout = () => {
         sx={{
           width: { md: isMobile ? 0 : open ? drawerWidth : collapsedWidth },
           flexShrink: { md: 0 },
+          mt: { xs: `${headerHeight.xs}px`, sm: `${headerHeight.sm}px` },
         }}
       >
         {/* Mobile drawer */}
@@ -147,8 +152,11 @@ const AdminLayout = () => {
                 width: drawerWidth,
                 borderRight: "1px solid",
                 borderColor: "divider",
-                top: { xs: "56px", sm: "44px" },
-                height: { xs: `calc(100% - 56px)`, sm: `calc(100% - 44px)` },
+                top: { xs: `${headerHeight.xs}px`, sm: `${headerHeight.sm}px` },
+                height: {
+                  xs: `calc(100% - ${headerHeight.xs}px)`,
+                  sm: `calc(100% - ${headerHeight.sm}px)`,
+                },
               },
             }}
           >
@@ -171,8 +179,11 @@ const AdminLayout = () => {
                 overflowX: "hidden",
                 borderRight: "1px solid",
                 borderColor: "divider",
-                top: { xs: "56px", sm: "44px" },
-                height: { xs: `calc(100% - 56px)`, sm: `calc(100% - 44px)` },
+                top: { xs: `${headerHeight.xs}px`, sm: `${headerHeight.sm}px` },
+                height: {
+                  xs: `calc(100% - ${headerHeight.xs}px)`,
+                  sm: `calc(100% - ${headerHeight.sm}px)`,
+                },
               },
             }}
             open={open}
@@ -189,17 +200,21 @@ const AdminLayout = () => {
           p: 2,
           flexGrow: 1,
           bgcolor: "grey.50",
-          minHeight: "100vh",
+          minHeight: {
+            xs: `calc(100vh - ${headerHeight.xs}px)`,
+            sm: `calc(100vh - ${headerHeight.sm}px)`,
+          },
           transition: theme.transitions.create(["margin", "width"], {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.enteringScreen,
           }),
-          // Use breakpoint-aware offsets so content uses remaining width
           ml: { xs: 0, md: `${open ? drawerWidth : collapsedWidth}px` },
           width: {
             xs: "100%",
             md: `calc(100% - ${open ? drawerWidth : collapsedWidth}px)`,
           },
+          overflow: "auto",
+          WebkitOverflowScrolling: "touch",
         }}
       >
         <Outlet />
@@ -212,9 +227,6 @@ const AdminLayout = () => {
       {/* App Bar */}
 
       <TopNavHeader title="Admin Panel" />
-
-      {/* Spacer below fixed header */}
-      <Box sx={{ height: { xs: 56, sm: 44 } }} />
 
       {/* Sidebar + Main content */}
       <LayoutBody />
