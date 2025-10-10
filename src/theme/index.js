@@ -3,6 +3,7 @@ import { red } from "@mui/material/colors";
 
 let theme = createTheme({
   palette: {
+    mode: "light",
     primary: {
       main: "#347DA2",
       medium: "#0F4880",
@@ -30,7 +31,7 @@ let theme = createTheme({
       main: red.A400,
     },
     background: {
-      default: "#2c435a",
+      default: "#FFFFFF",
       paper: "#ffffff",
     },
     neutral: {
@@ -66,7 +67,7 @@ theme = createTheme(theme, {
           borderRadius: theme.shape.borderRadius,
           fontWeight: 600,
           letterSpacing: 0.1,
-          ["@media (min-width:1366px)"]: {
+          "@media (min-width:1366px)": {
             fontSize: "15px",
           },
           "& .MuiButton-startIcon, & .MuiButton-endIcon": {
@@ -149,10 +150,74 @@ theme = createTheme(theme, {
     },
     MuiCssBaseline: {
       styleOverrides: {
+        html: {
+          height: "100%",
+        },
         body: {
           backgroundColor: theme.palette.background.default,
           fontFamily: theme.typography.fontFamily,
         },
+        "#root": {
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+        },
+        // Table header cell content spacing
+        ".Mui-TableHeadCell-Content": {
+          justifyContent: "space-between !important",
+          display: "flex !important",
+          alignItems: "center !important",
+        },
+        // Material React Table & MUI Table global light-theme overrides (scoped)
+        ".mrt-table-paper": {
+          backgroundColor: `${theme.palette.background.paper} !important`,
+          color: `${theme.palette.text.primary} !important`,
+        },
+        ".mrt-table-paper .mrt-top-toolbar, .mrt-table-paper .mrt-bottom-toolbar":
+          {
+            backgroundColor: `${theme.palette.background.paper} !important`,
+            color: `${theme.palette.text.primary} !important`,
+          },
+        ".mrt-table-paper .mrt-top-toolbar": {
+          borderBottom: `1px solid ${theme.palette.custom.paleBlue}`,
+        },
+        ".mrt-table-paper .mrt-bottom-toolbar": {
+          borderTop: `1px solid ${theme.palette.custom.paleBlue}`,
+        },
+        ".mrt-table-paper .MuiTableContainer-root": {
+          backgroundColor: `${theme.palette.custom.tablediffBlue} !important`,
+        },
+        ".mrt-table-paper .MuiTable-root": {
+          backgroundColor: "transparent !important",
+        },
+        ".mrt-table-paper .MuiTableHead-root .MuiTableRow-root": {
+          backgroundColor: `${theme.palette.custom.paleBlue} !important`,
+        },
+        ".mrt-table-paper .MuiTableHead-root .MuiTableCell-root": {
+          color: `${theme.palette.text.primary} !important`,
+          fontWeight: 600,
+        },
+        ".mrt-table-paper .MuiTableBody-root .MuiTableRow-root": {
+          backgroundColor: `${theme.palette.background.paper} !important`,
+        },
+        ".mrt-table-paper .MuiTableBody-root .MuiTableRow-root:hover": {
+          backgroundColor: `rgba(221,234,239,0.20) !important`,
+        },
+        ".mrt-table-paper .MuiTableCell-root": {
+          borderBottom: `1px solid ${theme.palette.custom.paleBlue} !important`,
+          color: `${theme.palette.text.primary} !important`,
+        },
+        ".mrt-table-paper .mrt-row-pin-column, .mrt-table-paper .MuiTableCell-root[data-pinned='true']":
+          {
+            backgroundColor: `${theme.palette.background.paper} !important`,
+            color: `${theme.palette.text.primary} !important`,
+          },
+        ".mrt-table-paper .MuiTableHead-root .mrt-row-pin-column, .mrt-table-paper .MuiTableHead-root .MuiTableCell-root[data-pinned='true']":
+          {
+            backgroundColor: `${theme.palette.custom.paleBlue} !important`,
+            color: `${theme.palette.text.primary} !important`,
+          },
+        // Remove custom action column sizing to fix pinning gap
       },
     },
   },

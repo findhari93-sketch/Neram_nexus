@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-React 18 educational admin portal with Microsoft Entra ID (Azure AD) authentication, role-based access control (RBAC), and Material-UI. Built with Create React App.
+React 18 educational admin portal with Microsoft Entra ID (Azure AD) authentication, role-based access control (RBAC), and Material-UI v5. Built with Create React App.
 
 ## Architecture
 
@@ -29,30 +29,9 @@ React 18 educational admin portal with Microsoft Entra ID (Azure AD) authenticat
 - **Sidebar state**: Persisted to `localStorage` with key `adminNavOpen` (desktop only)
 - **Mobile behavior**: Temporary drawer on mobile, permanent on desktop; auto-reset on breakpoint change
 - **Header**: Fixed `TopNavHeader` with user profile from Graph API photo endpoint
+- **Sidebar navigation**: Updates via `navigationItems` array in layout files
 
-### Data Grid Pattern (`AppAgGrid.jsx`)
-
-Reusable AG Grid wrapper with integrated action bar. Key features:
-
-- **Action mode**: Toggle with delete button; shows checkboxes, hides edit icons, enables bulk selection
-- **Edit icon column**: Always first column (left-pinned), shows on row hover, hidden in action mode
-- **Integrated toolbar**: Title, breadcrumbs, date filter, search popover, CRUD actions
-- **State management**: Local copy of `rowData` when in action mode; syncs with parent when exited
-- **Deletion flow**: Confirmation dialog with checklist of selected rows + manual confirmation checkbox
-
-```jsx
-<AppAgGrid
-  rowData={rows}
-  columnDefs={columnDefs}
-  onRowClick={openEditor}        // Edit on click
-  title="Enquiries"
-  breadcrumbs={[...]}
-  showDateFilter                 // Integrated date range
-  onExportClick={customExport}   // Falls back to grid.exportDataAsCsv()
-/>
-```
-
-### Theme Customization (`src/Theme/index.js`)
+### Theme Customization (`src/theme/index.js`)
 
 - **Custom palette**: `theme.palette.custom` contains brand colors (headerGradient, darkNavy, paleBlue, etc.)
 - **Button variants**: Custom variants `ourColor`, `whiteSolid`, `plainSolid` (underlined)
@@ -66,6 +45,14 @@ Reusable AG Grid wrapper with integrated action bar. Key features:
 npm start        # Dev server on localhost:3000
 npm run build    # Production build
 npm test         # Jest test runner
+```
+
+### Missing Dependencies Issue
+
+**Critical**: `@mui/x-date-pickers` is used in `index.js` but not in `package.json`. Add it:
+
+```bash
+npm install @mui/x-date-pickers date-fns
 ```
 
 ### Azure AD Configuration Required
@@ -82,14 +69,15 @@ Before running, update `src/config/authConfig.js`:
 
 ### Component Organization
 
-- **Shared components**: `src/components/Shared/` (AppDialog, BigDrawer, UserProfile, etc.)
-- **Feature components**: `src/components/DataGrid/`, `src/components/DateFilter/`
+- **Shared components**: `src/components/Shared/` (BigDrawer, TopNavHeader, UserProfile)
+- **Feature components**: `src/components/DateFilter/`
 - **Page components**: `src/pages/{role}/` (admin, teacher, student folders)
 - **Layouts**: `src/layouts/` for role-specific layouts with sidebar + outlet
+- **Routes**: `src/routes/` exports from `index.js` for cleaner imports
 
 ### File Naming
 
-- **Components**: PascalCase `.jsx` for React components (e.g., `AdminLayout.jsx`, `AppAgGrid.jsx`)
+- **Components**: PascalCase `.jsx` for React components (e.g., `AdminLayout.jsx`)
 - **Utilities**: camelCase `.js` for utilities (e.g., `dateFilterUtils.js`)
 - **Index exports**: `src/routes/index.js` exports all route components for cleaner imports
 
@@ -98,13 +86,6 @@ Before running, update `src/config/authConfig.js`:
 - **No global state library**: Local state with `useState`, props drilling, MSAL hooks
 - **MSAL hooks**: `useMsal()`, `useAccount()`, `useIsAuthenticated()` for auth state
 - **LocalStorage**: Sidebar state persistence (key: `{role}NavOpen`)
-
-### AG Grid Integration
-
-- **Theme**: `ag-theme-quartz` with custom CSS overrides in `AppAgGrid.css`
-- **Auto-sizing**: Prop `autoSizeStrategy`: `'fit'` (default) | `'sizeColumnsToFit'` | `'autoSizeAll'`
-- **Ref exposure**: `ref.current.exportCsv()`, `ref.current.sizeToFit()` for programmatic control
-- **Pinned columns**: Edit column always pinned left; selection checkbox prepended in action mode
 
 ### Date Handling
 
@@ -134,29 +115,49 @@ Before running, update `src/config/authConfig.js`:
 </RequireRole>
 ```
 
-### Using AppAgGrid with Custom Actions
+### Using Material-UI Tables for Data Display
 
 ```jsx
-const [rows, setRows] = useState([...]);
-const handleRowClick = useCallback((rowData, event) => {
-  // Open editor drawer/dialog
-}, []);
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+} from "@mui/material";
 
-<AppAgGrid
-  rowData={rows}
-  columnDefs={[{ field: 'name', headerName: 'Name' }]}
-  onRowClick={handleRowClick}
-  showDateFilter
-  onDateRangeChange={(start, end) => fetchData(start, end)}
-/>
+const DataTable = ({ rows, columns }) => (
+  <TableContainer component={Paper}>
+    <Table>
+      <TableHead>
+        <TableRow>
+          {columns.map((col) => (
+            <TableCell key={col.field}>{col.headerName}</TableCell>
+          ))}
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={row.id}>
+            {columns.map((col) => (
+              <TableCell key={col.field}>{row[col.field]}</TableCell>
+            ))}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  </TableContainer>
+);
 ```
 
 ## External Dependencies
 
 - **Material-UI v5**: Primary UI library; use `useTheme()`, `useMediaQuery()` for responsive design
-- **AG Grid Community**: Data grids; avoid enterprise features (not licensed)
 - **MSAL React v2**: Authentication; tokens auto-refresh, use `acquireTokenSilent` for Graph calls
 - **React Router v6**: Use `<Navigate replace />`, not `useNavigate().replace()` in render paths
+- **Date Pickers**: `@mui/x-date-pickers` and `date-fns` for date handling
 
 ## Testing Considerations
 
@@ -175,5 +176,11 @@ const handleRowClick = useCallback((rowData, event) => {
 
 - **Role case-sensitivity**: Token roles are case-sensitive (use exact `"Admin"`, not `"admin"`)
 - **Sidebar mobile reset**: Sidebar state resets when switching between mobile/desktop breakpoints
-- **AG Grid theme**: Custom CSS in `AppAgGrid.css` overrides Quartz theme; check before global style changes
 - **Graph photo**: Silently fails if `User.Read` scope not granted; falls back to initials in avatar
+
+## Unique Project Patterns
+
+### Drawer System Architecture
+
+- **BigDrawer**: Reusable side drawer in `src/components/Shared/`
+- **Mobile-first responsive**: Auto-collapsing sidebar with localStorage persistence

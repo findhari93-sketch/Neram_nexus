@@ -1,24 +1,36 @@
-// MSAL configuration
+import { LogLevel } from "@azure/msal-browser";
+
+// Build authority from tenant id (tenant-specific endpoint recommended)
+const tenantId = process.env.REACT_APP_MSAL_TENANT_ID;
+const authority = tenantId
+  ? `https://login.microsoftonline.com/${tenantId}`
+  : "https://login.microsoftonline.com/common";
+
 export const msalConfig = {
   auth: {
-    clientId: "aa039c70-50d2-4c91-bd0e-5675df5e50ff", // Your Azure AD App Registration Client ID
-    authority:
-      "https://login.microsoftonline.com/34f1037a-2491-4c77-a011-f0c12e275c57", // Your Tenant ID
-    redirectUri: "http://localhost:3000", // Must match the redirect URI configured in Azure AD
-    postLogoutRedirectUri: "http://localhost:3000",
+    clientId: process.env.REACT_APP_MSAL_CLIENT_ID || "",
+    authority,
+    // Use envs; fall back to current origin if envs missing
+    redirectUri:
+      process.env.REACT_APP_MSAL_REDIRECT_URI || window.location.origin,
+    postLogoutRedirectUri:
+      process.env.REACT_APP_MSAL_POST_LOGOUT_URI || window.location.origin,
   },
   cache: {
-    cacheLocation: "sessionStorage", // This configures where your cache will be stored
-    storeAuthStateInCookie: false, // Set this to "true" if you are having issues on IE11 or Edge
+    cacheLocation: "sessionStorage",
+    storeAuthStateInCookie: false,
+  },
+  system: {
+    loggerOptions: { logLevel: LogLevel.Error },
   },
 };
 
-// Add scopes here for ID token to be used at Microsoft identity platform endpoints.
+// Scopes you need
 export const loginRequest = {
-  scopes: ["User.Read", "openid", "profile"],
+  scopes: ["openid", "profile", "email", "User.Read"],
 };
 
-// Add the endpoints here for Microsoft Graph API services you'd like to use.
+// Microsoft Graph endpoints (unchanged)
 export const graphConfig = {
   graphMeEndpoint: "https://graph.microsoft.com/v1.0/me",
   graphPhotoEndpoint: "https://graph.microsoft.com/v1.0/me/photo/$value",

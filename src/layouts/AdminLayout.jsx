@@ -29,6 +29,9 @@ const AdminLayout = () => {
 
   const headerHeight = { xs: HEADER_HEIGHT_XS, sm: HEADER_HEIGHT_SM };
 
+  // Global date filter state (used for created_at filtering)
+  const [dateRange, setDateRange] = useState(null); // { start: Date, end: Date }
+
   // Sidebar state management
   const [open, setOpen] = useState(() => {
     if (isMobile) return false;
@@ -197,13 +200,11 @@ const AdminLayout = () => {
       <Box
         component="main"
         sx={{
-          p: 2,
-          flexGrow: 1,
+          px: 2,
+          pt: 7,
+          pb: 2,
           bgcolor: "grey.50",
-          minHeight: {
-            xs: `calc(100vh - ${headerHeight.xs}px)`,
-            sm: `calc(100vh - ${headerHeight.sm}px)`,
-          },
+
           transition: theme.transitions.create(["margin", "width"], {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.enteringScreen,
@@ -213,11 +214,10 @@ const AdminLayout = () => {
             xs: "100%",
             md: `calc(100% - ${open ? drawerWidth : collapsedWidth}px)`,
           },
-          overflow: "auto",
           WebkitOverflowScrolling: "touch",
         }}
       >
-        <Outlet />
+        <Outlet context={{ dateRange }} />
       </Box>
     </>
   );
@@ -226,7 +226,16 @@ const AdminLayout = () => {
     <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       {/* App Bar */}
 
-      <TopNavHeader title="Admin Panel" />
+      <TopNavHeader
+        title="Admin Panel"
+        showBack
+        onBack={() => {
+          /* handle back */
+        }}
+        breadcrumbs={[{ label: "Home", href: "/" }, { label: "Users" }]}
+        dateFilterValue={dateRange}
+        onDateFilterChange={setDateRange}
+      />
 
       {/* Sidebar + Main content */}
       <LayoutBody />
