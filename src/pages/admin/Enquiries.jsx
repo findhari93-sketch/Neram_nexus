@@ -10,9 +10,27 @@ import {
   useMaterialReactTable,
 } from "material-react-table";
 import { supabase } from "../../lib/supabaseClient";
-import { initialUserData, userColumns } from "./EnquiryData";
+import { initialUserData, userColumns } from "./WebUsersData";
+import WebUsersDrawer from "../../components/pages/admin/comp/WebUsersDrawer";
 
-const Enquiries = () => {
+const WebUsers = () => {
+  // Drawer state
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState(null);
+
+  // Callback for drawer save
+  const handleDrawerSaved = (patch) => {
+    if (!patch?.id) return;
+    setData((prev) =>
+      prev.map((item) => (item.id === patch.id ? { ...item, ...patch } : item))
+    );
+  };
+  // Callback for drawer delete
+  const handleDrawerDeleted = (id) => {
+    setData((prev) => prev.filter((item) => item.id !== id));
+    setDrawerOpen(false);
+    setSelectedUserId(null);
+  };
   const [validationErrors, setValidationErrors] = useState({});
   const { dateRange } = useOutletContext() || {};
   const [data, setData] = useState(initialUserData);
@@ -38,7 +56,7 @@ const Enquiries = () => {
 
   // Update handlers (create is disabled for this table)
 
-  const handleSaveEnquiry = async ({ values, table, row }) => {
+  const handleSaveWebUser = async ({ values, table, row }) => {
     const newValidationErrors = {};
     if (!validateRequired(values.student_name || "")) {
       newValidationErrors.student_name = "Student Name is required";
@@ -170,7 +188,7 @@ const Enquiries = () => {
   }, []);
 
   const openDeleteConfirmModal = async (row) => {
-    if (!window.confirm("Are you sure you want to delete this enquiry?"))
+    if (!window.confirm("Are you sure you want to delete this web user?"))
       return;
 
     const prevData = data;
@@ -530,9 +548,27 @@ const Enquiries = () => {
     muiTopToolbarProps: {},
     muiBottomToolbarProps: {},
     onEditingRowCancel: () => setValidationErrors({}),
-    onEditingRowSave: handleSaveEnquiry,
+    onEditingRowSave: handleSaveWebUser,
     renderRowActions: ({ row, table }) => (
       <Box sx={{ display: "flex", gap: 1 }}>
+        <Tooltip title="Open">
+          <IconButton
+            color="primary"
+            onClick={() => {
+              setSelectedUserId(row.original.id);
+              setDrawerOpen(true);
+            }}
+            sx={{
+              opacity: 0,
+              transition: "opacity 0.2s",
+              ".MuiTableRow-root:hover &": {
+                opacity: 1,
+              },
+            }}
+          >
+            <span className="material-icons">open_in_new</span>
+          </IconButton>
+        </Tooltip>
         <Tooltip title="Edit">
           <IconButton
             onClick={() => table.setEditingRow(row)}
@@ -576,8 +612,21 @@ const Enquiries = () => {
   return (
     <>
       <MaterialReactTable table={table} />
+      {/* Drawer integration */}
+      {drawerOpen && selectedUserId && (
+        <React.Suspense fallback={null}>
+          {/* Lazy import for code splitting, or direct import if preferred */}
+          <WebUsersDrawer
+            open={drawerOpen}
+            userId={selectedUserId}
+            onClose={() => setDrawerOpen(false)}
+            onSaved={handleDrawerSaved}
+            onDeleted={handleDrawerDeleted}
+          />
+        </React.Suspense>
+      )}
     </>
   );
 };
 
-export default Enquiries;
+export default WebUsers;

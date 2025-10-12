@@ -1,4 +1,4 @@
-// Demo data for Enquiries table
+// Demo data for WebUsers table
 // Export as a plain array so components can import and manage state locally
 
 // Column definitions for Users table (no React logic)
