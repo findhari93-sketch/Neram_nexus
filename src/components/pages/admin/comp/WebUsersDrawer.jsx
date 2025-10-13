@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Box,
   IconButton,
@@ -9,16 +9,111 @@ import {
   DialogActions,
   Button,
   CircularProgress,
+  Grid2,
+  Avatar,
+  Typography,
+  TextField,
+  MenuItem,
+  Stack,
 } from "@mui/material";
 import InfoCard from "../../../../components/Shared/InfoCard";
 import BigDrawer from "../../../../components/Shared/BigDrawer";
 import { supabase } from "../../../../lib/supabaseClient";
 
+// Stable, memoized EditDialog component defined at module scope
+const EditDialog = React.memo(function EditDialog({
+  open,
+  cfg,
+  values,
+  saving,
+  errors,
+  onClose,
+  onChange,
+  onSubmit,
+}) {
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="sm"
+      disableEnforceFocus
+      disableAutoFocus
+      disableRestoreFocus
+      keepMounted
+    >
+      {cfg ? (
+        <>
+          <DialogTitle>{cfg.title}</DialogTitle>
+          <DialogContent dividers>
+            <Stack spacing={1.5} sx={{ pt: 1 }}>
+              {(cfg.fields || []).map((f) =>
+                f.type === "select" ? (
+                  <TextField
+                    key={f.key}
+                    select
+                    label={f.label}
+                    size="small"
+                    value={values?.[f.key] ?? ""}
+                    onChange={onChange(f.key)}
+                    fullWidth
+                    autoFocus={false}
+                    error={Boolean(errors?.[f.key])}
+                    helperText={errors?.[f.key] || ""}
+                  >
+                    {(f.options || []).map((opt) => (
+                      <MenuItem key={opt} value={opt}>
+                        {opt}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                ) : (
+                  <TextField
+                    key={f.key}
+                    label={f.label}
+                    size="small"
+                    type={
+                      f.type === "number"
+                        ? "number"
+                        : f.type === "date"
+                        ? "date"
+                        : "text"
+                    }
+                    value={values?.[f.key] ?? ""}
+                    onChange={onChange(f.key)}
+                    fullWidth
+                    multiline={f.type === "multiline"}
+                    minRows={f.type === "multiline" ? 3 : undefined}
+                    autoFocus={false}
+                    error={Boolean(errors?.[f.key])}
+                    helperText={errors?.[f.key] || ""}
+                  />
+                )
+              )}
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button
+              onClick={onSubmit}
+              variant="contained"
+              disabled={saving || Boolean(errors && Object.keys(errors).length)}
+            >
+              Save
+            </Button>
+          </DialogActions>
+        </>
+      ) : null}
+    </Dialog>
+  );
+});
+
 const WebUsersDrawer = ({ open, userId, onClose, onSaved, onDeleted }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [editState, setEditState] = useState({});
+
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
@@ -27,28 +122,7 @@ const WebUsersDrawer = ({ open, userId, onClose, onSaved, onDeleted }) => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Undo all handler
-  const handleUndoAll = () => {
-    // Reset all edit states and reload user data from supabase
-    if (!userId) return;
-    setLoading(true);
-    supabase
-      .from("users")
-      .select("*")
-      .eq("id", userId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        setUser(data || null);
-        setError(error);
-        setLoading(false);
-        setEditState({});
-        setSnackbar({
-          open: true,
-          message: error ? "Undo failed" : "All changes reverted",
-          color: error ? "error" : "success",
-        });
-      });
-  };
+  // Undo handled via dialog actions (if any) — footer actions removed for this drawer
 
   useEffect(() => {
     if (open && userId) {
@@ -60,46 +134,337 @@ const WebUsersDrawer = ({ open, userId, onClose, onSaved, onDeleted }) => {
         .maybeSingle()
         .then(({ data, error }) => {
           setUser(data || null);
-          setError(error);
           setLoading(false);
         });
     }
   }, [open, userId]);
 
-  // Save handler for any card
-  const handleSave = async (patch, cardKey) => {
-    if (!userId || !patch || Object.keys(patch).length === 0) return;
-    setEditState((prev) => ({ ...prev, [cardKey]: { loading: true } }));
-    const { data: updatedRows, error } = await supabase
-      .from("users")
-      .update(patch)
-      .eq("id", userId)
-      .select("id, updated_at");
-    if (error || !updatedRows || updatedRows.length === 0) {
+  // Derived flags
+  const isFree = (user?.account_type || "").toLowerCase() === "free";
+
+  // Helpers for display formatting
+  const fmtArray = (arr) => (Array.isArray(arr) ? arr.join(", ") : arr || "-");
+  const fmtBool = (v) => (v ? "Yes" : v === false ? "No" : "-");
+  const fmtDateTime = (v) => {
+    if (!v) return "-";
+    try {
+      const d = new Date(v);
+      if (isNaN(d.getTime())) return String(v);
+      return d.toLocaleString();
+    } catch {
+      return String(v);
+    }
+  };
+
+  // Date helpers for input and DB
+  const toDateInputValue = (v) => {
+    if (!v) return "";
+    try {
+      const d = new Date(v);
+      if (isNaN(d.getTime())) return "";
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    } catch {
+      return "";
+    }
+  };
+  const normalizeDateForDb = (v) => {
+    if (v === undefined || v === null) return null;
+    const s = String(v).trim();
+    if (!s) return null; // empty -> null to satisfy Postgres date
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; // already yyyy-mm-dd
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return null;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  // Select helpers
+  const mapToOptionCaseInsensitive = (options, val) => {
+    if (val === undefined || val === null) return "";
+    const s = String(val).toLowerCase();
+    const match = (options || []).find(
+      (opt) => String(opt).toLowerCase() === s
+    );
+    return match ?? "";
+  };
+
+  // Reusable key-value list to match desired design
+  const KeyValueList = ({ rows }) => (
+    <Box sx={{ maxWidth: 560, mx: "auto" }}>
+      {rows.map(({ label, value }, idx) => (
+        <Box
+          key={idx}
+          sx={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto 1.25fr",
+            alignItems: "baseline",
+            gap: 1,
+            py: 0.5,
+          }}
+        >
+          <Typography
+            variant="body2"
+            color="text.primary"
+            sx={{ textAlign: "right", opacity: 0.7 }}
+          >
+            {label}
+          </Typography>
+          <Typography variant="body2" color="text.disabled" sx={{ px: 1 }}>
+            :
+          </Typography>
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {value ?? "-"}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+
+  // Edit dialog state and helpers
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editDialogCardKey, setEditDialogCardKey] = useState(null);
+  const [editDialogValues, setEditDialogValues] = useState({});
+  const [editDialogSaving, setEditDialogSaving] = useState(false);
+
+  const openEditDialog = useCallback(
+    (cardKey) => {
+      if (!user) return;
+      const cfg = getEditConfig(cardKey);
+      if (!cfg) return;
+      const values = {};
+      cfg.fields.forEach((f) => {
+        const v = user[f.key];
+        if (f.key === "interests") {
+          values[f.key] = Array.isArray(v) ? v.join(", ") : v || "";
+        } else if (f.type === "select") {
+          values[f.key] = mapToOptionCaseInsensitive(f.options, v);
+        } else if (f.type === "date") {
+          values[f.key] = toDateInputValue(v);
+        } else {
+          values[f.key] = v ?? f.default ?? "";
+        }
+      });
+      setEditDialogCardKey(cardKey);
+      setEditDialogValues(values);
+      setEditDialogOpen(true);
+      setEditDialogSaving(false);
+    },
+    [user]
+  );
+
+  const closeEditDialog = useCallback(() => {
+    setEditDialogOpen(false);
+    setEditDialogCardKey(null);
+    setEditDialogValues({});
+    setEditDialogSaving(false);
+  }, []);
+
+  const handleEditChange = useCallback(
+    (key) => (e) => {
+      const value = e.target.value;
+      setEditDialogValues((prev) => ({ ...prev, [key]: value }));
+    },
+    []
+  );
+
+  // Save handler for any card (move above submitEditDialog)
+  const handleSave = React.useCallback(
+    async (patch, cardKey) => {
+      if (!userId || !patch || Object.keys(patch).length === 0) return;
+      const { data: updatedRows, error } = await supabase
+        .from("users")
+        .update(patch)
+        .eq("id", userId)
+        .select("id, updated_at");
+      if (error || !updatedRows || updatedRows.length === 0) {
+        // Optional logging to help debug Supabase errors
+        if (error) {
+          // eslint-disable-next-line no-console
+          console.error("Supabase users update error", {
+            cardKey,
+            patch,
+            error,
+          });
+        }
+        setSnackbar({
+          open: true,
+          message: error ? error.message : "No row updated; check RLS.",
+          color: "error",
+        });
+        return;
+      }
+      setUser((prev) => ({
+        ...prev,
+        ...patch,
+        updated_at: updatedRows[0].updated_at,
+      }));
       setSnackbar({
         open: true,
-        message: error ? error.message : "No row updated; check RLS.",
+        message: "Saved successfully",
+        color: "success",
+      });
+      if (onSaved) onSaved({ id: userId, ...patch });
+    },
+    [userId, onSaved]
+  );
+
+  const submitEditDialog = useCallback(async () => {
+    if (!editDialogCardKey) return;
+    const cfg = getEditConfig(editDialogCardKey);
+    if (!cfg) return;
+    // Basic validation: required fields
+    const requiredErrors = {};
+    (cfg.fields || []).forEach((f) => {
+      if (f.required) {
+        const raw = editDialogValues[f.key];
+        const s = typeof raw === "string" ? raw.trim() : raw;
+        if (!s) requiredErrors[f.key] = `${f.label} is required`;
+      }
+    });
+    if (Object.keys(requiredErrors).length) {
+      setSnackbar({
+        open: true,
+        message: "Please fill required fields.",
         color: "error",
       });
-      setEditState((prev) => ({ ...prev, [cardKey]: { loading: false } }));
       return;
     }
-    setUser((prev) => ({
-      ...prev,
-      ...patch,
-      updated_at: updatedRows[0].updated_at,
-    }));
-    setEditState((prev) => ({
-      ...prev,
-      [cardKey]: { loading: false, editing: false },
-    }));
-    setSnackbar({
-      open: true,
-      message: "Saved successfully",
-      color: "success",
+    // Build patch with type conversions
+    const patch = {};
+    cfg.fields.forEach((f) => {
+      let val = editDialogValues[f.key];
+      if (f.type === "number") {
+        const n = parseFloat(val);
+        val = Number.isNaN(n) ? null : n;
+      } else if (f.type === "arrayCsv") {
+        val =
+          typeof val === "string" && val.trim().length
+            ? val
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : [];
+      } else if (f.type === "select") {
+        // Preserve exact casing; treat empty as null
+        val = val === "" ? null : val;
+      } else if (f.type === "date") {
+        val = normalizeDateForDb(val);
+      } else if (f.type === "text" || f.type === "multiline") {
+        val = typeof val === "string" ? val.trim() : val;
+      }
+      patch[f.key] = val;
     });
-    if (onSaved) onSaved({ id: userId, ...patch });
+    setEditDialogSaving(true);
+    await handleSave(patch, editDialogCardKey);
+    setEditDialogSaving(false);
+    closeEditDialog();
+  }, [editDialogCardKey, editDialogValues, handleSave, closeEditDialog]);
+
+  // Config per card for editable fields
+  const getEditConfig = (cardKey) => {
+    const basic = {
+      key: "basic",
+      title: "Edit Basic Info",
+      fields: [
+        { key: "student_name", label: "Name", type: "text", required: true },
+        { key: "father_name", label: "Father Name", type: "text" },
+        {
+          key: "gender",
+          label: "Gender",
+          type: "select",
+          options: ["Male", "Female", "Other"],
+        },
+        { key: "dob", label: "Date of Birth", type: "date" },
+        { key: "username", label: "Username", type: "text" },
+        { key: "bio", label: "Bio", type: "multiline" },
+        {
+          key: "account_type",
+          label: "Account Type",
+          type: "select",
+          options: ["Free", "Paid"],
+        },
+        {
+          key: "interests",
+          label: "Interests (comma separated)",
+          type: "arrayCsv",
+        },
+      ],
+    };
+    const contact = {
+      key: "contact",
+      title: "Edit Contact & Address",
+      fields: [
+        { key: "email", label: "Email", type: "text" },
+        { key: "phone", label: "Phone", type: "text" },
+        { key: "instagram_handle", label: "Instagram Handle", type: "text" },
+        { key: "zip_code", label: "Zip Code", type: "text" },
+        { key: "city", label: "City", type: "text" },
+        { key: "state", label: "State", type: "text" },
+        { key: "country", label: "Country", type: "text" },
+      ],
+    };
+    const education = {
+      key: "education",
+      title: "Edit Education",
+      fields: [
+        { key: "education_type", label: "Education Type", type: "text" },
+        { key: "selected_course", label: "Selected Course", type: "text" },
+        { key: "school_std", label: "School Std", type: "text" },
+        { key: "board", label: "Board", type: "text" },
+        { key: "board_year", label: "Board Year", type: "text" },
+        { key: "school_name", label: "School Name", type: "text" },
+        { key: "college_name", label: "College Name", type: "text" },
+        { key: "college_year", label: "College Year", type: "text" },
+        { key: "diploma_course", label: "Diploma Course", type: "text" },
+        { key: "diploma_year", label: "Diploma Year", type: "text" },
+        { key: "diploma_college", label: "Diploma College", type: "text" },
+        { key: "nata_attempt_year", label: "NATA Attempt Year", type: "text" },
+      ],
+    };
+    const course = {
+      key: "course",
+      title: "Edit Course & Payments",
+      fields: [
+        { key: "course_fee", label: "Course Fee", type: "number" },
+        { key: "discount", label: "Discount", type: "number" },
+        { key: "total_payable", label: "Total Payable", type: "number" },
+        { key: "payment_type", label: "Payment Type", type: "text" },
+        { key: "selected_course", label: "Selected Course", type: "text" },
+      ],
+    };
+    switch (cardKey) {
+      case "basic":
+        return basic;
+      case "contact":
+        return contact;
+      case "education":
+        return education;
+      case "course":
+        return course;
+      default:
+        return null;
+    }
   };
+
+  // compute edit config on each render (cheap). Dialog stays mounted; open controls visibility.
+  const editCfg = editDialogCardKey ? getEditConfig(editDialogCardKey) : null;
+  const editErrors = useMemo(() => {
+    const errs = {};
+    if (!editCfg) return errs;
+    (editCfg.fields || []).forEach((f) => {
+      if (f.required) {
+        const raw = editDialogValues[f.key];
+        const s = typeof raw === "string" ? raw.trim() : raw;
+        if (!s) errs[f.key] = `${f.label} is required`;
+      }
+    });
+    return errs;
+  }, [editCfg, editDialogValues]);
 
   // Delete handler
   const handleDelete = async () => {
@@ -123,148 +488,224 @@ const WebUsersDrawer = ({ open, userId, onClose, onSaved, onDeleted }) => {
     onClose();
   };
 
-  // Card edit toggles
-  const toggleEdit = (cardKey) =>
-    setEditState((prev) => ({
-      ...prev,
-      [cardKey]: { editing: !prev[cardKey]?.editing },
-    }));
-  const cancelEdit = (cardKey) =>
-    setEditState((prev) => ({ ...prev, [cardKey]: { editing: false } }));
+  // (legacy) Card edit toggles removed; dialog-based editing used instead
 
   // Card content: display all user data grouped by category, read-only for now
-  const BasicInfoCard = () => (
-    <InfoCard title="Basic Info" isEditing={false}>
-      <Box>
-        <strong>Name:</strong> {user?.student_name}
-        <br />
-        <strong>Father Name:</strong> {user?.father_name}
-        <br />
-        <strong>Gender:</strong> {user?.gender}
-        <br />
-        <strong>Date of Birth:</strong> {user?.dob}
-        <br />
-        <strong>Username:</strong> {user?.username}
-        <br />
-        <strong>Bio:</strong> {user?.bio}
-        <br />
-        <strong>Account Type:</strong> {user?.account_type}
-        <br />
-        <strong>Interests:</strong>{" "}
-        {Array.isArray(user?.interests) ? user.interests.join(", ") : ""}
-        <br />
-        <strong>Description:</strong> {user?.other_description}
-        <br />
-        <strong>ID:</strong> {user?.id}
-      </Box>
-    </InfoCard>
-  );
+  const BasicInfoCard = () => {
+    const getInitials = (name = "") => {
+      const parts = String(name).trim().split(/\s+/);
+      const first = parts[0]?.[0] || "";
+      const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+      return (first + last).toUpperCase();
+    };
+
+    // Try to extract a Google profile photo URL
+    const resolveProfilePhotoUrl = () => {
+      const tryExtract = (obj) => {
+        if (!obj) return null;
+        try {
+          const o = typeof obj === "string" ? JSON.parse(obj) : obj;
+          return (
+            o?.picture ||
+            o?.photoURL ||
+            o?.image?.url ||
+            (Array.isArray(o?.photos) ? o.photos[0]?.value : null) ||
+            o?.picture_url ||
+            o?.pictureUrl ||
+            null
+          );
+        } catch {
+          // if profile is a raw URL string
+          if (typeof obj === "string" && /^https?:\/\//i.test(obj)) return obj;
+          return null;
+        }
+      };
+
+      return tryExtract(user?.profile) || tryExtract(user?.google_info) || null;
+    };
+
+    const resolveAvatarUrl = () => {
+      const p = user?.avatar_path;
+      if (!p || typeof p !== "string") return null;
+      if (/^https?:\/\//i.test(p)) return p;
+      try {
+        const { data } = supabase.storage.from("avatars").getPublicUrl(p);
+        return data?.publicUrl || null;
+      } catch {
+        return null;
+      }
+    };
+
+    const displayName = user?.student_name || user?.username || "User";
+    const photoUrl = resolveProfilePhotoUrl() || resolveAvatarUrl();
+    const initials = getInitials(displayName);
+
+    return (
+      <InfoCard
+        title="Basic Info"
+        isEditing={false}
+        onEdit={() => openEditDialog("basic")}
+      >
+        <Box>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 2,
+              mb: 2,
+            }}
+          >
+            <Avatar
+              src={photoUrl || undefined}
+              imgProps={{ referrerPolicy: "no-referrer" }}
+              sx={{
+                width: 72,
+                height: 72,
+                fontWeight: 700,
+                fontSize: 22,
+                bgcolor: "background.paper",
+                color: "text.primary",
+                border: "1px solid",
+                borderColor: "divider",
+              }}
+            >
+              {!photoUrl && initials}
+            </Avatar>
+            <Box sx={{ textAlign: "center" }}>
+              <Typography variant="subtitle1" fontWeight={700}>
+                {displayName}
+              </Typography>
+              {user?.email && (
+                <Typography variant="body2" color="text.secondary">
+                  {user.email}
+                </Typography>
+              )}
+            </Box>
+          </Box>
+          <KeyValueList
+            rows={[
+              { label: "Father Name", value: user?.father_name || "-" },
+              { label: "Gender", value: user?.gender || "-" },
+              { label: "Date of Birth", value: user?.dob || "-" },
+              { label: "Username", value: user?.username || "-" },
+              { label: "Bio", value: user?.bio || "-" },
+              { label: "Account Type", value: user?.account_type || "-" },
+              { label: "Interests", value: fmtArray(user?.interests) },
+              { label: "Description", value: user?.other_description || "-" },
+              { label: "ID", value: user?.id || "-" },
+            ]}
+          />
+        </Box>
+      </InfoCard>
+    );
+  };
 
   const ContactAddressCard = () => (
-    <InfoCard title="Contact & Address" isEditing={false}>
-      <Box>
-        <strong>Email:</strong> {user?.email}
-        <br />
-        <strong>Phone:</strong> {user?.phone}
-        <br />
-        <strong>Phone Auth Used:</strong> {user?.phone_auth_used ? "Yes" : "No"}
-        <br />
-        <strong>Instagram Handle:</strong> {user?.instagram_handle}
-        <br />
-        <strong>Last Sign In:</strong> {user?.last_sign_in}
-        <br />
-        <strong>Providers:</strong>{" "}
-        {Array.isArray(user?.providers) ? user.providers.join(", ") : ""}
-        <br />
-        <strong>Zip Code:</strong> {user?.zip_code}
-        <br />
-        <strong>City:</strong> {user?.city}
-        <br />
-        <strong>State:</strong> {user?.state}
-        <br />
-        <strong>Country:</strong> {user?.country}
-      </Box>
+    <InfoCard
+      title="Contact & Address"
+      isEditing={false}
+      onEdit={() => openEditDialog("contact")}
+    >
+      <KeyValueList
+        rows={[
+          { label: "Email", value: user?.email || "-" },
+          { label: "Phone", value: user?.phone || "-" },
+          { label: "Instagram Handle", value: user?.instagram_handle || "-" },
+          { label: "Providers", value: fmtArray(user?.providers) },
+          { label: "Zip Code", value: user?.zip_code || "-" },
+          { label: "City", value: user?.city || "-" },
+          { label: "State", value: user?.state || "-" },
+          { label: "Country", value: user?.country || "-" },
+        ]}
+      />
     </InfoCard>
   );
 
   const EducationCard = () => (
-    <InfoCard title="Education" isEditing={false}>
-      <Box>
-        <strong>Education Type:</strong> {user?.education_type}
-        <br />
-        <strong>Selected Course:</strong> {user?.selected_course}
-        <br />
-        <strong>School Std:</strong> {user?.school_std}
-        <br />
-        <strong>Board:</strong> {user?.board}
-        <br />
-        <strong>Board Year:</strong> {user?.board_year}
-        <br />
-        <strong>School Name:</strong> {user?.school_name}
-        <br />
-        <strong>College Name:</strong> {user?.college_name}
-        <br />
-        <strong>College Year:</strong> {user?.college_year}
-        <br />
-        <strong>Diploma Course:</strong> {user?.diploma_course}
-        <br />
-        <strong>Diploma Year:</strong> {user?.diploma_year}
-        <br />
-        <strong>Diploma College:</strong> {user?.diploma_college}
-        <br />
-        <strong>NATA Attempt Year:</strong> {user?.nata_attempt_year}
-      </Box>
+    <InfoCard
+      title="Education"
+      isEditing={false}
+      onEdit={() => openEditDialog("education")}
+    >
+      <KeyValueList
+        rows={[
+          { label: "Education Type", value: user?.education_type || "-" },
+          { label: "Selected Course", value: user?.selected_course || "-" },
+          { label: "School Std", value: user?.school_std || "-" },
+          { label: "Board", value: user?.board || "-" },
+          { label: "Board Year", value: user?.board_year || "-" },
+          { label: "School Name", value: user?.school_name || "-" },
+          { label: "College Name", value: user?.college_name || "-" },
+          { label: "College Year", value: user?.college_year || "-" },
+          { label: "Diploma Course", value: user?.diploma_course || "-" },
+          { label: "Diploma Year", value: user?.diploma_year || "-" },
+          { label: "Diploma College", value: user?.diploma_college || "-" },
+          { label: "NATA Attempt Year", value: user?.nata_attempt_year || "-" },
+        ]}
+      />
     </InfoCard>
   );
 
   const CourseCard = () =>
-    user?.account_type !== "Free" ? (
-      <InfoCard title="Course & Payments" isEditing={null}>
-        <Box>
-          <strong>Course Fee:</strong> {user?.course_fee}
-          <br />
-          <strong>Discount:</strong> {user?.discount}
-          <br />
-          <strong>Total Payable:</strong> {user?.total_payable}
-          <br />
-          <strong>Payment Type:</strong> {user?.payment_type}
-          <br />
-          <strong>Selected Course:</strong> {user?.selected_course}
-        </Box>
+    !isFree ? (
+      <InfoCard
+        title="Course & Payments"
+        isEditing={null}
+        onEdit={() => openEditDialog("course")}
+      >
+        <KeyValueList
+          rows={[
+            { label: "Course Fee", value: user?.course_fee ?? "-" },
+            { label: "Discount", value: user?.discount ?? "-" },
+            { label: "Total Payable", value: user?.total_payable ?? "-" },
+            { label: "Payment Type", value: user?.payment_type || "-" },
+            { label: "Selected Course", value: user?.selected_course || "-" },
+          ]}
+        />
       </InfoCard>
     ) : null;
 
   const ActivityCard = () => (
     <InfoCard title="Activity" isEditing={null}>
-      <Box>
-        <strong>Created At:</strong> {user?.created_at}
-        <br />
-        <strong>Updated At:</strong> {user?.updated_at}
-      </Box>
+      <KeyValueList
+        rows={[
+          { label: "Last Sign In", value: fmtDateTime(user?.last_sign_in) },
+          { label: "Created At", value: fmtDateTime(user?.created_at) },
+          { label: "Updated At", value: fmtDateTime(user?.updated_at) },
+        ]}
+      />
     </InfoCard>
   );
 
   const NataCalculatorCard = () => (
     <InfoCard title="NATA Calculator Sessions" isEditing={null}>
-      <Box>
-        <strong>Sessions:</strong>{" "}
-        {user?.nata_calculator_sessions
-          ? JSON.stringify(user.nata_calculator_sessions)
-          : "None"}
-      </Box>
+      <KeyValueList
+        rows={[
+          {
+            label: "Sessions",
+            value: Array.isArray(user?.nata_calculator_sessions)
+              ? user.nata_calculator_sessions.length
+              : 0,
+          },
+        ]}
+      />
     </InfoCard>
   );
 
   const AuthAccountsCard = () => (
     <InfoCard title="Auth Accounts" isEditing={null}>
-      <Box>
-        <strong>Google Info:</strong>{" "}
-        {user?.google_info ? JSON.stringify(user.google_info) : ""}
-        <br />
-        <strong>Firebase UID:</strong> {user?.firebase_uid}
-        <br />
-        <strong>Legacy External ID:</strong> {user?.legacy_external_id}
-      </Box>
+      <KeyValueList
+        rows={[
+          { label: "Google Connected", value: fmtBool(!!user?.google_info) },
+          { label: "Phone Auth Used", value: fmtBool(user?.phone_auth_used) },
+          { label: "Firebase UID", value: user?.firebase_uid || "-" },
+          {
+            label: "Legacy External ID",
+            value: user?.legacy_external_id || "-",
+          },
+        ]}
+      />
     </InfoCard>
   );
 
@@ -272,63 +713,71 @@ const WebUsersDrawer = ({ open, userId, onClose, onSaved, onDeleted }) => {
   // ...implement similarly, passing correct fields and handlers
 
   if (!open) return null;
+  const headerActions = [
+    <IconButton
+      key="delete"
+      color="error"
+      onClick={() => setDeleteDialogOpen(true)}
+    >
+      <span className="material-icons">delete</span>
+    </IconButton>,
+  ];
+
   return (
     <BigDrawer
       open={open}
       onClose={onClose}
-      title={user?.student_name || "User Details"}
-      actions={[
-        <Button
-          key="save"
-          variant="contained"
-          color="primary"
-          onClick={() => handleSave()}
-          disabled={loading}
-        >
-          Save
-        </Button>,
-        <Button
-          key="cancel"
-          variant="outlined"
-          color="secondary"
-          onClick={onClose}
-        >
-          Cancel
-        </Button>,
-        <Button
-          key="undo"
-          variant="text"
-          color="warning"
-          onClick={handleUndoAll}
-        >
-          Undo All
-        </Button>,
-      ]}
+      hideFooter={true}
+      headerActions={headerActions}
+      title={
+        user?.student_name
+          ? `${user.student_name} - User Details`
+          : "User Details"
+      }
     >
       {loading ? (
         <Box sx={{ p: 4, textAlign: "center" }}>
           <CircularProgress />
         </Box>
       ) : (
-        <Box sx={{ p: 2, overflowY: "auto", maxHeight: "calc(100vh - 64px)" }}>
-          {/* Drawer header with delete button */}
-          <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 2 }}>
-            <IconButton color="error" onClick={() => setDeleteDialogOpen(true)}>
-              <span className="material-icons">delete</span>
-            </IconButton>
+        <Box
+          sx={{
+            p: 2,
+            display: "flex",
+            flexDirection: "column",
+            height: "100%",
+          }}
+        >
+          {/* Drawer header actions moved into BigDrawer header */}
+          {/* Cards container: let this fill remaining space and scroll */}
+          <Box sx={{ overflowY: "auto", flex: 1, pr: 1 }}>
+            <Grid2 container spacing={2}>
+              <Grid2 size={{ xs: 12, md: 6 }}>
+                <BasicInfoCard />
+              </Grid2>
+              <Grid2 size={{ xs: 12, md: 6 }}>
+                <ContactAddressCard />
+              </Grid2>
+              <Grid2 size={{ xs: 12, md: 6 }}>
+                <EducationCard />
+              </Grid2>
+              {!isFree && (
+                <Grid2 size={{ xs: 12, md: 6 }}>
+                  <CourseCard />
+                </Grid2>
+              )}
+              <Grid2 size={{ xs: 12, md: 6 }}>
+                <ActivityCard />
+                <AuthAccountsCard />
+              </Grid2>
+              <Grid2 size={{ xs: 12 }}>
+                <NataCalculatorCard />
+              </Grid2>
+            </Grid2>
           </Box>
-          {/* Cards */}
-          <BasicInfoCard />
-          <ContactAddressCard />
-          <EducationCard />
-          <CourseCard />
-          <ActivityCard />
-          <NataCalculatorCard />
-          <AuthAccountsCard />
         </Box>
       )}
-      // Remove any duplicate or misplaced handleUndoAll definitions after the
-      return
+
       {/* Delete confirmation dialog */}
       <Dialog
         open={deleteDialogOpen}
@@ -350,6 +799,7 @@ const WebUsersDrawer = ({ open, userId, onClose, onSaved, onDeleted }) => {
           </Button>
         </DialogActions>
       </Dialog>
+
       <Snackbar
         open={snackbar.open}
         autoHideDuration={4000}
@@ -362,6 +812,16 @@ const WebUsersDrawer = ({ open, userId, onClose, onSaved, onDeleted }) => {
             color: "#fff",
           },
         }}
+      />
+      <EditDialog
+        open={editDialogOpen}
+        cfg={editCfg}
+        values={editDialogValues}
+        saving={editDialogSaving}
+        errors={editErrors}
+        onClose={closeEditDialog}
+        onChange={handleEditChange}
+        onSubmit={submitEditDialog}
       />
     </BigDrawer>
   );

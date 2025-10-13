@@ -24,6 +24,10 @@ export default function BigDrawer({
   actions = [],
   children,
   anchor = "right",
+  // when true, footer area is not rendered even if actions provided
+  hideFooter = false,
+  // headerActions: optional actions to render in the header (e.g., IconButtons)
+  headerActions = [],
 }) {
   const theme = useTheme();
 
@@ -60,14 +64,22 @@ export default function BigDrawer({
         <Typography variant="h6" fontWeight={600} fontSize={18}>
           {title}
         </Typography>
-        <IconButton
-          onClick={onClose}
-          sx={{ color: theme.palette.common.white }}
-          size="large"
-          aria-label="Close"
-        >
-          <CloseIcon />
-        </IconButton>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, pr: 1 }}>
+          {React.Children.map(headerActions, (action, idx) =>
+            React.cloneElement(action, {
+              key: `header-${idx}`,
+              sx: { color: theme.palette.common.white, ...action.props.sx },
+            })
+          )}
+          <IconButton
+            onClick={onClose}
+            sx={{ color: theme.palette.common.white }}
+            size="large"
+            aria-label="Close"
+          >
+            <CloseIcon />
+          </IconButton>
+        </Box>
       </Box>
 
       {/* Body */}
@@ -81,33 +93,35 @@ export default function BigDrawer({
         {children}
       </Box>
 
-      {/* Footer */}
-      <Box
-        sx={{
-          height: "61px",
-          bgcolor: theme.palette.custom.paleBlue,
-          px: 3,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Stack direction="row" spacing={2}>
-          {React.Children.map(actions, (action, idx) =>
-            React.cloneElement(action, {
-              sx: {
-                height: "40px",
-                minWidth: 120,
-                fontWeight: 600,
-                fontSize: 16,
-                borderRadius: theme.shape.borderRadius,
-                ...action.props.sx,
-              },
-              key: idx,
-            })
-          )}
-        </Stack>
-      </Box>
+      {/* Footer (render only when not hidden and actions exist) */}
+      {!hideFooter && React.Children.count(actions) > 0 && (
+        <Box
+          sx={{
+            height: "61px",
+            bgcolor: theme.palette.custom.paleBlue,
+            px: 3,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Stack direction="row" spacing={2}>
+            {React.Children.map(actions, (action, idx) =>
+              React.cloneElement(action, {
+                sx: {
+                  height: "40px",
+                  minWidth: 120,
+                  fontWeight: 600,
+                  fontSize: 16,
+                  borderRadius: theme.shape.borderRadius,
+                  ...action.props.sx,
+                },
+                key: idx,
+              })
+            )}
+          </Stack>
+        </Box>
+      )}
     </Drawer>
   );
 }

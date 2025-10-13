@@ -7,6 +7,7 @@ import {
   Box,
   CircularProgress,
   Divider,
+  Typography,
 } from "@mui/material";
 
 const InfoCard = ({
@@ -20,40 +21,64 @@ const InfoCard = ({
   isLoading,
   actions,
   divider = true,
+  titleIcon, // optional: material icon name to render on the left of the title
 }) => (
-  <Card sx={{ mb: 2, boxShadow: 1 }}>
+  <Card
+    sx={{
+      mb: 2,
+      border: 1,
+      borderColor: "divider",
+      borderRadius: 2,
+      boxShadow: 0,
+      overflow: "hidden",
+    }}
+  >
     <CardHeader
-      title={title}
+      title={
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+          {titleIcon ? (
+            <span
+              className="material-icons-outlined"
+              style={{ fontSize: 22, color: "rgba(0,0,0,0.54)" }}
+            >
+              {titleIcon}
+            </span>
+          ) : null}
+          <Typography variant="h6" fontWeight={600} component="div">
+            {title}
+          </Typography>
+        </Box>
+      }
       action={
         <Box>
           {isLoading ? (
-            <CircularProgress size={24} />
+            <CircularProgress size={22} />
           ) : isEditing ? (
             <>
               <IconButton
                 aria-label="Save"
                 onClick={onSave}
                 disabled={saveDisabled}
-                color="primary"
+                size="small"
               >
                 <span className="material-icons">check</span>
               </IconButton>
-              <IconButton aria-label="Cancel" onClick={onCancel} color="error">
+              <IconButton aria-label="Cancel" onClick={onCancel} size="small">
                 <span className="material-icons">close</span>
               </IconButton>
             </>
-          ) : (
-            <IconButton aria-label="Edit" onClick={onEdit} color="primary">
+          ) : onEdit ? (
+            <IconButton aria-label="Edit" onClick={onEdit} size="small">
               <span className="material-icons">edit</span>
             </IconButton>
-          )}
+          ) : null}
           {actions}
         </Box>
       }
-      sx={{ pb: 0, pt: 2 }}
+      sx={{ px: 2.5, py: 1.5 }}
     />
     {divider && <Divider />}
-    <CardContent sx={{ pt: 2 }}>{children}</CardContent>
+    <CardContent sx={{ px: 2.5, py: 2 }}>{children}</CardContent>
   </Card>
 );
 

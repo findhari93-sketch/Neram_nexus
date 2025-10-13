@@ -3,7 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import RequireRole from "../auth/RequireRole";
 import AdminLayout from "../layouts/AdminLayout";
 import Dashboard from "../pages/admin/Dashboard";
-import Enquiries from "../pages/admin/Enquiries";
+import WebUsers from "../pages/admin/WebUsers";
 
 const AdminRoutes = () => {
   return (
@@ -13,8 +13,8 @@ const AdminRoutes = () => {
           {/* Admin Dashboard - Default route */}
           <Route index element={<Dashboard />} />
 
-          {/* Enquiry Database */}
-          <Route path="enquiries" element={<Enquiries />} />
+          {/* Web Users */}
+          <Route path="web-users" element={<WebUsers />} />
 
           {/* Redirect unknown admin routes to dashboard */}
           <Route path="*" element={<Navigate to="/admin" replace />} />

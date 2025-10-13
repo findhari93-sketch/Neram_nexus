@@ -20,8 +20,8 @@ let theme = createTheme({
       darkNavy: "#21262D",
     },
     text: {
-      primary: "#000000",
-      secondary: "#e8e8e8",
+      primary: "#0F4880",
+      secondary: "#347DA2",
       disabled: "#777777",
     },
     secondary: {
@@ -34,8 +34,18 @@ let theme = createTheme({
       default: "#FFFFFF",
       paper: "#ffffff",
     },
-    neutral: {
-      grey100: "#E1E1DF",
+
+    grey: {
+      50: "#fafafa",
+      100: "#f5f5f5",
+      200: "#eeeeee",
+      300: "#e0e0e0",
+      400: "#bdbdbd",
+      500: "#9e9e9e",
+      600: "#757575",
+      700: "#616161",
+      800: "#424242",
+      900: "#212121",
     },
   },
   typography: {

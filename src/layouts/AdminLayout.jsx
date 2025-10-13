@@ -74,7 +74,7 @@ const AdminLayout = () => {
   // Navigation items
   const navigationItems = [
     { icon: <Dashboard />, label: "Dashboard", to: "/admin" },
-    { icon: <TableChart />, label: "Enquiry Database", to: "/admin/enquiries" },
+    { icon: <TableChart />, label: "Web Users", to: "/admin/web-users" },
   ];
 
   // Sidebar content
