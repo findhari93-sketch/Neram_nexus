@@ -34,7 +34,10 @@ export default async function middleware(request: NextRequest) {
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon.ico") ||
+    // Allow all auth pages (custom NextAuth pages) to render without redirects
+    pathname.startsWith("/auth") ||
     pathname === "/" ||
+    pathname === "/auth/unauthorized" ||
     pathname === "/unauthorized"
   ) {
     return NextResponse.next();
@@ -74,6 +77,6 @@ export const config = {
      * - favicon.ico (favicon file)
      * - public folder
      */
-    "/((?!api/auth|_next/static|_next/image|favicon.ico|public).*)",
+    "/((?!api/auth|auth|_next/static|_next/image|favicon.ico|public).*)",
   ],
 };
