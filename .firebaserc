@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "neramtypeco"
+  },
+  "targets": {
+    "neramtypeco": {
+      "hosting": {
+        "neramNexus": [
+          "neramtypeco"
+        ]
+      }
+    }
+  }
+}
