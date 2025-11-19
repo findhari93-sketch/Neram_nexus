@@ -1,6 +1,9 @@
 import QueryProvider from "@/app/components/Providers/QueryProvider";
 import SessionProvider from "@/app/providers/SessionProvider";
 
+// Force dynamic rendering for all pages (app uses client hooks like usePathname)
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Neram Admin Nexus",
   description: "Administrative management system",

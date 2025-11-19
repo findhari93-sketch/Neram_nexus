@@ -1,6 +1,10 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
+
+// Force dynamic rendering
+export const dynamic = "force-dynamic";
+
 import {
   Box,
   Card,

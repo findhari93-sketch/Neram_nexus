@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import Razorpay from "razorpay";
 
+// Force dynamic rendering (uses searchParams)
+export const dynamic = "force-dynamic";
+
 // Environment variables
 const {
   RAZORPAY_KEY_ID,
