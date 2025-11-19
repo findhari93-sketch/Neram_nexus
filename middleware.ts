@@ -32,10 +32,10 @@ export default async function middleware(request: NextRequest) {
   // Skip middleware for public routes
   if (
     pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/auth/") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon.ico") ||
-    pathname === "/"
+    pathname === "/" ||
+    pathname === "/unauthorized"
   ) {
     return NextResponse.next();
   }
@@ -48,7 +48,7 @@ export default async function middleware(request: NextRequest) {
 
   // Check if user is authenticated
   if (!token) {
-    const signInUrl = new URL("/auth/signin", request.url);
+    const signInUrl = new URL("/api/auth/signin", request.url);
     signInUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(signInUrl);
   }
@@ -57,7 +57,7 @@ export default async function middleware(request: NextRequest) {
   const userRole = token.role as AppRole;
   if (!hasRequiredRole(userRole, pathname)) {
     // Redirect to unauthorized page
-    const unauthorizedUrl = new URL("/auth/unauthorized", request.url);
+    const unauthorizedUrl = new URL("/unauthorized", request.url);
     return NextResponse.redirect(unauthorizedUrl);
   }
 
