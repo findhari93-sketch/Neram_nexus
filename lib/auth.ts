@@ -16,6 +16,8 @@ export const authOptions: NextAuthOptions = {
           scope: "openid profile email offline_access User.Read",
         },
       },
+      // Enable PKCE (Proof Key for Code Exchange) required by Azure AD
+      checks: ["pkce", "state"],
     }),
   ],
   session: { strategy: "jwt" },
