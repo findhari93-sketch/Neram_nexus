@@ -14,17 +14,13 @@ export const authOptions: NextAuthOptions = {
       authorization: {
         params: {
           scope: "openid profile email offline_access User.Read",
-          // Force response_mode to form_post to avoid PKCE issues
-          response_mode: "form_post",
+          // Explicitly ensure code flow (default) with PKCE
+          response_type: "code",
         },
       },
-      // Use PKCE with S256 method as required by Azure AD
+      // Re-enable PKCE + state (state cookie will work since we removed form_post)
       checks: ["pkce", "state"],
-      client: {
-        // Explicitly set token endpoint auth method for confidential clients
-        token_endpoint_auth_method: "client_secret_post",
-      },
-    } as any),
+    }),
   ],
   session: { strategy: "jwt" },
   debug: envFlag(process.env.NEXTAUTH_DEBUG),
