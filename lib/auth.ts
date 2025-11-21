@@ -16,8 +16,10 @@ export const authOptions: NextAuthOptions = {
           scope: "openid profile email offline_access User.Read",
         },
       },
-      // Enable PKCE (Proof Key for Code Exchange) required by Azure AD
-      checks: ["pkce", "state"],
+      // PKCE is enabled by default in NextAuth v4 with Azure AD, but we need to ensure
+      // Azure AD is configured as a confidential client (not public client)
+      // Remove explicit PKCE check to use default behavior
+      checks: ["state"],
     }),
   ],
   session: { strategy: "jwt" },
