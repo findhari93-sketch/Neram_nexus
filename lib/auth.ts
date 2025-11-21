@@ -49,32 +49,46 @@ export const authOptions: NextAuthOptions = {
           const rawProfile = profile as any;
           const tenantId = rawProfile.tid || rawProfile.tenantId;
           token.tenantId = tenantId;
+
+          // Tenant verification - don't fail, just warn
           if (!verifyTenant(tenantId, process.env.AZURE_AD_TENANT_ID)) {
-            // Do not throw — mark error to avoid redirect loop
+            console.warn("[NextAuth jwt] Tenant mismatch:", tenantId);
+            // Allow sign-in but mark the error
             (token as any).authError = "tenant_mismatch";
           }
+
+          // Role mapping - handle missing roles gracefully
           const roles: string[] | undefined =
-            rawProfile.roles || rawProfile.groups;
-          if (roles) token.roles = roles;
+            rawProfile.roles || rawProfile.groups || undefined;
+          if (roles && Array.isArray(roles)) {
+            token.roles = roles;
+          }
+
+          // Always set a role (defaults to "student" if no roles found)
           token.role = mapAzureRoleToAppRole(roles);
+
           if (envFlag(process.env.NEXTAUTH_DEBUG)) {
-            // Minimal debug logging
             console.log(
-              "[NextAuth jwt] tenant=",
-              tenantId,
-              "roles=",
-              roles,
-              "mappedRole=",
-              token.role
+              "[NextAuth jwt] Successfully processed:",
+              {
+                tenant: tenantId,
+                roles: roles || "none",
+                mappedRole: token.role,
+                email: rawProfile.email || rawProfile.preferred_username
+              }
             );
           }
         } catch (e: any) {
-          console.error("[NextAuth jwt] callback failure", e);
+          console.error("[NextAuth jwt] callback failure:", e.message);
+          // Don't block sign-in on JWT callback errors
+          // Just assign default role and continue
+          token.role = "student";
           (token as any).authError = "jwt_exception";
         }
       }
       // If provider-level error surfaced (e.g., invalid client secret), expose minimal flag
       if (account && account.error) {
+        console.error("[NextAuth] Account error:", account.error);
         (token as any).authError = account.error;
       }
       return token;
