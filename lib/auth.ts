@@ -24,6 +24,17 @@ export const authOptions: NextAuthOptions = {
   ],
   session: { strategy: "jwt" },
   debug: envFlag(process.env.NEXTAUTH_DEBUG),
+  cookies: {
+    pkceCodeVerifier: {
+      name: "next-auth.pkce.code_verifier",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: false, // Set to false for localhost
+      },
+    },
+  },
   callbacks: {
     async jwt({ token, profile, account }) {
       if (profile) {
