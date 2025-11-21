@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const {
   RAZORPAY_KEY_ID,
   RAZORPAY_KEY_SECRET,
-  APP_BASE_URL = "http://localhost:3000",
+  APP_BASE_URL,
 } = process.env;
 
 if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
@@ -75,6 +75,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const token = searchParams.get("v");
     const type = searchParams.get("type") || "razorpay";
+    const baseUrl = APP_BASE_URL || "http://localhost:3000";
 
     if (!token) {
       return NextResponse.json(
@@ -90,7 +91,7 @@ export async function GET(request: NextRequest) {
     } catch (err: any) {
       console.error("[pay API] Token verification failed:", err.message);
       return NextResponse.redirect(
-        `${APP_BASE_URL}/payment/error?message=${encodeURIComponent(
+        `${baseUrl}/payment/error?message=${encodeURIComponent(
           err.message
         )}`
       );
@@ -102,7 +103,7 @@ export async function GET(request: NextRequest) {
     const appDetails = user.application_details || {};
     if (appDetails.payment_status === "paid") {
       return NextResponse.redirect(
-        `${APP_BASE_URL}/payment/success?already_paid=true`
+        `${baseUrl}/payment/success?already_paid=true`
       );
     }
 
@@ -139,7 +140,7 @@ export async function GET(request: NextRequest) {
         payment_token: token,
         payment_type: type,
       },
-      callback_url: `${APP_BASE_URL}/payment/callback`,
+      callback_url: `${baseUrl}/payment/callback`,
       callback_method: "get",
     };
 
@@ -149,7 +150,7 @@ export async function GET(request: NextRequest) {
     } catch (razorpayErr: any) {
       console.error("[pay API] Razorpay error:", razorpayErr);
       return NextResponse.redirect(
-        `${APP_BASE_URL}/payment/error?message=Payment provider error`
+        `${baseUrl}/payment/error?message=Payment provider error`
       );
     }
 
@@ -178,8 +179,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(paymentLink.short_url);
   } catch (error: any) {
     console.error("[pay API] Error:", error);
+    const baseUrl = APP_BASE_URL || "http://localhost:3000";
     return NextResponse.redirect(
-      `${APP_BASE_URL}/payment/error?message=Internal server error`
+      `${baseUrl}/payment/error?message=Internal server error`
     );
   }
 }

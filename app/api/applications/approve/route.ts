@@ -9,8 +9,8 @@ const {
   AZ_CLIENT_ID,
   AZ_CLIENT_SECRET,
   AZ_SENDER_USER,
-  HELP_DESK_EMAIL = "support@neram.co.in",
-  APP_BASE_URL = "https://neramclasses.com",
+  HELP_DESK_EMAIL,
+  APP_BASE_URL,
 } = process.env;
 
 /**
@@ -41,7 +41,9 @@ async function getGraphToken(): Promise<string | null> {
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error(`[approve API] Failed to get Graph token: ${response.status} ${errorText}`);
+    console.error(
+      `[approve API] Failed to get Graph token: ${response.status} ${errorText}`
+    );
     return null;
   }
 
@@ -224,6 +226,9 @@ function generateApprovalEmailHTML(data: {
         } )`
       : "";
 
+  const helpDeskEmail = HELP_DESK_EMAIL || "support@neram.co.in";
+  const baseUrl = APP_BASE_URL || "http://localhost:3000";
+
   return `
 <!DOCTYPE html>
 <html>
@@ -268,7 +273,7 @@ function generateApprovalEmailHTML(data: {
     <div class="header">
       <div class="logo">neram<span class="pink">Classes.com</span></div>
       <div class="header-info">
-        Need help? <a href="mailto:${HELP_DESK_EMAIL}" style="color: #fff;">Contact us</a><br>
+        Need help? <a href="mailto:${helpDeskEmail}" style="color: #fff;">Contact us</a><br>
         Application Number: ${applicationNumber}
       </div>
     </div>
@@ -277,7 +282,7 @@ function generateApprovalEmailHTML(data: {
     <div class="success-banner">
       <h2>Congratulations ${applicantName},</h2>
       <p>Your Application has been Approved</p>
-      <a href="${APP_BASE_URL}/application/${applicationNumber}">View Application</a>
+      <a href="${baseUrl}/application/${applicationNumber}">View Application</a>
     </div>
 
     <!-- Title -->
@@ -349,7 +354,7 @@ function generateApprovalEmailHTML(data: {
         <a href="https://neramclasses.com"><img src="https://cdn-icons-png.flaticon.com/32/281/281769.png" alt="Web" width="24"></a>
       </div>
       <div class="footer-text">
-        Click here to <a href="${APP_BASE_URL}/unsubscribe">unsubscribe</a> or manage your email preferences.<br>
+        Click here to <a href="${baseUrl}/unsubscribe">unsubscribe</a> or manage your email preferences.<br>
         Please do not reply to this email. Emails sent to this address will not be answered.<br>
         Copyright © 1999-2025 neramClasses.com, LLC. All rights reserved.
       </div>
@@ -365,13 +370,14 @@ function generateApprovalEmailHTML(data: {
  */
 function generateRejectionEmailHTML(
   applicantName: string,
-  helpDeskEmail: string
+  helpDeskEmail: string | undefined
 ): string {
+  const contactInfo = helpDeskEmail || "support@neram.co.in";
   return `
     <div style="font-family:Arial,sans-serif;font-size:14px;color:#222">
       <p>Dear ${applicantName || "Applicant"},</p>
       <p>We're sorry to inform you that your application has been <b>Rejected</b>.</p>
-      <p>If you believe this is an error or need assistance, please contact our helpdesk at ${helpDeskEmail}.</p>
+      <p>If you believe this is an error or need assistance, please contact our helpdesk at ${contactInfo}.</p>
       <p>Regards,<br/>Neram Classes</p>
     </div>
   `;
@@ -386,10 +392,7 @@ export async function POST(request: NextRequest) {
     // Verify authentication
     const session = await getServerSession(authOptions);
     if (!session || !session.user) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Check if user has admin role
@@ -407,7 +410,9 @@ export async function POST(request: NextRequest) {
 
     if (!id || !["Approved", "Rejected"].includes(status)) {
       return NextResponse.json(
-        { error: "Invalid payload - id and status (Approved/Rejected) required" },
+        {
+          error: "Invalid payload - id and status (Approved/Rejected) required",
+        },
         { status: 400 }
       );
     }
@@ -459,7 +464,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Extract user email
-    const userEmail = user.email || (user.contact && user.contact.email) || null;
+    const userEmail =
+      user.email || (user.contact && user.contact.email) || null;
     if (!userEmail) {
       return NextResponse.json({
         ok: true,
@@ -473,7 +479,9 @@ export async function POST(request: NextRequest) {
 
     // If no email configuration, just return success without sending email
     if (!graphToken) {
-      console.warn("[approve API] Email credentials not configured - skipping email");
+      console.warn(
+        "[approve API] Email credentials not configured - skipping email"
+      );
       return NextResponse.json({
         ok: true,
         updated: updatedUser,
@@ -491,7 +499,8 @@ export async function POST(request: NextRequest) {
 
     if (status === "Approved") {
       // Extract admin_filled data for approved email
-      const appDetails = updatedUser?.application_details || user.application_details || {};
+      const appDetails =
+        updatedUser?.application_details || user.application_details || {};
       const adminFilled =
         appDetails.admin_filled ||
         appDetails.admin_filled_details ||
@@ -503,10 +512,12 @@ export async function POST(request: NextRequest) {
       const courseName =
         adminFilled.final_course_Name ||
         user.selected_course ||
-        (appDetails.course) ||
+        appDetails.course ||
         "N/A";
       const courseDuration = adminFilled.course_duration || "N/A";
-      const totalCourseFees = Number(adminFilled.total_course_fees || user.course_fee || 0);
+      const totalCourseFees = Number(
+        adminFilled.total_course_fees || user.course_fee || 0
+      );
       const discount = Number(adminFilled.discount || user.discount || 0);
       const finalFeePayment =
         Number(adminFilled.final_fee_payment_amount) ||
@@ -528,7 +539,13 @@ export async function POST(request: NextRequest) {
 
       // Store payment tokens in database
       await storePaymentToken(id, directToken, finalFeePayment, "direct", 7);
-      await storePaymentToken(id, razorpayToken, finalFeePayment, "razorpay", 7);
+      await storePaymentToken(
+        id,
+        razorpayToken,
+        finalFeePayment,
+        "razorpay",
+        7
+      );
 
       // Build payment URLs
       const directPayUrl = `${APP_BASE_URL}/pay?v=${encodeURIComponent(
