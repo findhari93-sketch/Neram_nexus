@@ -9,7 +9,8 @@ export const authOptions: NextAuthOptions = {
   providers: [
     AzureADProvider({
       clientId: process.env.AZURE_AD_CLIENT_ID!,
-      clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
+      // Temporarily remove client secret to work with Azure AD public client mode
+      clientSecret: process.env.AZURE_AD_CLIENT_SECRET || "dummy-secret-for-pkce",
       tenantId: process.env.AZURE_AD_TENANT_ID!,
       authorization: {
         params: {
@@ -18,9 +19,15 @@ export const authOptions: NextAuthOptions = {
           response_type: "code",
         },
       },
-      // Re-enable PKCE + state (state cookie will work since we removed form_post)
+      // Use PKCE without client secret (public client flow)
       checks: ["pkce", "state"],
-    }),
+      // Override token endpoint to not send client secret
+      token: {
+        params: {
+          grant_type: "authorization_code",
+        },
+      },
+    } as any),
   ],
   session: { strategy: "jwt" },
   debug: envFlag(process.env.NEXTAUTH_DEBUG),
