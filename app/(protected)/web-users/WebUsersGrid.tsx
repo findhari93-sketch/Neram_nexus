@@ -17,6 +17,7 @@ import {
   InputLabel,
   Avatar,
   Checkbox,
+  Chip,
   IconButton,
   InputAdornment,
   Tooltip,
@@ -573,6 +574,71 @@ const BoolCell: React.FC<{ value?: boolean | any; label?: string }> =
     );
   });
 
+// Admin Approval cell component that shows appropriate status based on submission
+const AdminApprovalCell: React.FC<{ original: NormalizedUser }> = React.memo(
+  ({ original }) => {
+    const isSubmitted = Boolean(original.application_submitted);
+    const approvalStatus = original.application_admin_approval;
+
+    // If application not submitted, show "Not Submitted"
+    if (!isSubmitted) {
+      return (
+        <Chip
+          label="Not Submitted"
+          size="small"
+          sx={{
+            bgcolor: "#f5f5f5",
+            color: "#666",
+            fontWeight: 500,
+          }}
+        />
+      );
+    }
+
+    // If submitted, check the approval status
+    const status = String(approvalStatus || "").toLowerCase();
+
+    if (status === "approved") {
+      return (
+        <Chip
+          label="Approved"
+          size="small"
+          sx={{
+            bgcolor: "#4caf50",
+            color: "#fff",
+            fontWeight: 500,
+          }}
+        />
+      );
+    } else if (status === "rejected") {
+      return (
+        <Chip
+          label="Rejected"
+          size="small"
+          sx={{
+            bgcolor: "#f44336",
+            color: "#fff",
+            fontWeight: 500,
+          }}
+        />
+      );
+    } else {
+      // Application submitted but not yet approved/rejected = Pending
+      return (
+        <Chip
+          label="Pending"
+          size="small"
+          sx={{
+            bgcolor: "#ff9800",
+            color: "#fff",
+            fontWeight: 500,
+          }}
+        />
+      );
+    }
+  }
+);
+
 // Editable cell component for inline editing
 const EditableCell: React.FC<{
   value: any;
@@ -639,11 +705,18 @@ function normalizeAccount(orig: RawRow, out: any) {
   for (const [key, val] of accountSources) {
     if (val !== undefined && val !== null) {
       const parsed = parseMaybeJson(val, AccountSchema);
-      if (parsed === undefined && process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.warn("Account data failed validation", { key, value: val });
+      // If schema validation fails, try to use the raw parsed value as fallback
+      if (parsed === undefined) {
+        // Attempt parsing without schema validation for more lenient handling
+        const fallbackParsed = parseMaybeJson(val);
+        account = account ?? fallbackParsed;
+        if (process.env.NODE_ENV === "development" && !fallbackParsed) {
+          // eslint-disable-next-line no-console
+          console.warn("Account data failed validation and parsing", { key, value: val });
+        }
+      } else {
+        account = account ?? parsed;
       }
-      account = account ?? parsed;
     }
   }
   account = account ?? (typeof orig === "object" ? orig : undefined);
@@ -661,6 +734,7 @@ function normalizeAccount(orig: RawRow, out: any) {
 
   out.providers = out.providers ?? account.providers ?? account.provider;
   out.created_at = out.created_at ?? account.created_at ?? account.createdAt;
+  out.last_sign_in = out.last_sign_in ?? account.last_sign_in ?? account.lastSignIn ?? account.last_login;
   out.account_type = out.account_type ?? account.account_type ?? account.type;
   out.display_name = out.display_name ?? account.display_name ?? account.name;
   out.firebase_uid = out.firebase_uid ?? account.firebase_uid ?? account.uid;
@@ -710,10 +784,8 @@ function normalizeBasic(orig: RawRow, out: any) {
 }
 
 function normalizeContact(orig: RawRow, out: any) {
-  // Keep the nested contact canonical. Populate `out.contact` with the
-  // parsed container (or raw value) and avoid copying individual fields to
-  // top-level keys. Components should prefer `original.phone`/`email` when
-  // explicitly normalized, otherwise read from `original.contact`.
+  // Parse and store the nested contact object, then extract individual fields
+  // to top-level keys for easier access in components
   let contact: any | undefined;
   const contactSources: Array<[string, any]> = [
     ["contact", orig.contact],
@@ -732,6 +804,24 @@ function normalizeContact(orig: RawRow, out: any) {
 
   if (contact !== undefined) {
     out.contact = out.contact ?? contact;
+  }
+
+  // Extract individual contact fields to top-level for easier access
+  if (contact && typeof contact === "object") {
+    out.email = out.email ?? contact.email ?? contact.primary_email;
+    out.phone = out.phone ?? contact.phone ?? contact.mobile;
+    out.city = out.city ?? contact.city;
+    out.state = out.state ?? contact.state;
+    out.country = out.country ?? contact.country;
+    out.zip_code = out.zip_code ?? contact.zip_code ?? contact.zip;
+  } else {
+    // Fallback to top-level fields if contact object doesn't exist
+    out.email = out.email ?? orig.email ?? orig.primary_email;
+    out.phone = out.phone ?? orig.phone ?? orig.mobile;
+    out.city = out.city ?? orig.city;
+    out.state = out.state ?? orig.state;
+    out.country = out.country ?? orig.country;
+    out.zip_code = out.zip_code ?? orig.zip_code ?? orig.zip;
   }
 }
 
@@ -1565,6 +1655,9 @@ const WebUsersGrid: React.FC = () => {
             header: "Admin Approval",
             size: 200,
             muiFilterTextFieldProps: defaultFilterProps,
+            Cell: ({ row }) => (
+              <AdminApprovalCell original={row.original as NormalizedUser} />
+            ),
           },
           {
             accessorKey: "approved_at",
@@ -1776,13 +1869,6 @@ const WebUsersGrid: React.FC = () => {
             header: "Bank",
             size: 160,
             muiFilterTextFieldProps: defaultFilterProps,
-          },
-          {
-            accessorKey: "contact",
-            header: "Contact",
-            size: 160,
-            muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => <ContactCell original={row.original} />,
           },
           {
             accessorKey: "receipt",
