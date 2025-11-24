@@ -51,7 +51,8 @@ export default async function middleware(request: NextRequest) {
 
   // Check if user is authenticated
   if (!token) {
-    const signInUrl = new URL("/api/auth/signin", request.url);
+    // Redirect unauthenticated users to the custom NextAuth sign-in page (not the API route)
+    const signInUrl = new URL("/auth/signin", request.url);
     signInUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(signInUrl);
   }
@@ -60,7 +61,8 @@ export default async function middleware(request: NextRequest) {
   const userRole = token.role as AppRole;
   if (!hasRequiredRole(userRole, pathname)) {
     // Redirect to unauthorized page
-    const unauthorizedUrl = new URL("/unauthorized", request.url);
+    // Use the custom unauthorized page under /auth namespace
+    const unauthorizedUrl = new URL("/auth/unauthorized", request.url);
     return NextResponse.redirect(unauthorizedUrl);
   }
 

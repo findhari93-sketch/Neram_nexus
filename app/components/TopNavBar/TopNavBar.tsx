@@ -11,6 +11,7 @@ import { useTheme } from "@mui/material/styles";
 import { useSession } from "next-auth/react";
 import UserProfile from "../UserProfile";
 import DateFilter from "../DateFilter/DateFilter";
+import { NotificationBell } from "../NotificationBell/NotificationBell";
 import { usePathname } from "next/navigation";
 import { findBestMatch, MenuItem } from "../../../lib/menuConfig";
 
@@ -150,7 +151,8 @@ const TopNavHeader: React.FC<Props> = ({
             {title}
           </Typography>
           <Box sx={{ flexGrow: 1 }} />
-          <Box sx={{ display: "flex", alignItems: "center" }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <NotificationBell />
             <UserProfile name={name} role={displayRole} size={34} />
           </Box>
         </Toolbar>

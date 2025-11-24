@@ -9,39 +9,20 @@ export const authOptions: NextAuthOptions = {
   providers: [
     AzureADProvider({
       clientId: process.env.AZURE_AD_CLIENT_ID!,
-      // Temporarily remove client secret to work with Azure AD public client mode
-      clientSecret: process.env.AZURE_AD_CLIENT_SECRET || "dummy-secret-for-pkce",
+      clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
       tenantId: process.env.AZURE_AD_TENANT_ID!,
+      // Ensure PKCE is used:
+      checks: ["pkce", "state"],
       authorization: {
         params: {
           scope: "openid profile email offline_access User.Read",
-          // Explicitly ensure code flow (default) with PKCE
           response_type: "code",
-        },
-      },
-      // Use PKCE without client secret (public client flow)
-      checks: ["pkce", "state"],
-      // Override token endpoint to not send client secret
-      token: {
-        params: {
-          grant_type: "authorization_code",
         },
       },
     } as any),
   ],
   session: { strategy: "jwt" },
   debug: envFlag(process.env.NEXTAUTH_DEBUG),
-  cookies: {
-    pkceCodeVerifier: {
-      name: "next-auth.pkce.code_verifier",
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: false, // Set to false for localhost
-      },
-    },
-  },
   callbacks: {
     async jwt({ token, profile, account }) {
       if (profile) {

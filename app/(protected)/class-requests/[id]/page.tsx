@@ -834,9 +834,9 @@ const AdminFilledCard: React.FC<{
                     size="small"
                     type="number"
                     value={
-                      (toNum(totalCourseFees) -
+                      toNum(totalCourseFees) -
                         toNum(discount) -
-                        toNum(firstInstallmentAmount)) || ""
+                        toNum(firstInstallmentAmount) || ""
                     }
                     disabled
                     inputProps={{ min: 0 }}
@@ -975,10 +975,14 @@ const AdminFilledCard: React.FC<{
                     resetIsFull ? "" : adminObj.first_installment_amount ?? ""
                   );
                   setSecondInstallmentDate(
-                    resetIsFull ? "" : toDateInputFormat(adminObj.second_installment_date)
+                    resetIsFull
+                      ? ""
+                      : toDateInputFormat(adminObj.second_installment_date)
                   );
                   setOfferPayBeforeDate(
-                    resetIsFull ? "" : toDateInputFormat(adminObj.offer_before_date)
+                    resetIsFull
+                      ? ""
+                      : toDateInputFormat(adminObj.offer_before_date)
                   );
                   setTotalCourseFees(adminObj.total_course_fees ?? "");
                   setDiscount(adminObj.discount ?? "");
