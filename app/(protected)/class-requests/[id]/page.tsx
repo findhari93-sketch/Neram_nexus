@@ -1165,7 +1165,7 @@ export default function ClassRequestDetailsPage() {
   // Determine permissions
   const canEdit = useMemo(() => {
     const role = session?.user?.role;
-    return role === "admin" || role === "superadmin";
+    return role === "admin" || role === "super_admin";
   }, [session?.user?.role]);
 
   // Handle approval/rejection - calls API endpoint which sends email

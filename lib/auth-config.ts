@@ -1,9 +1,9 @@
-export type AppRole = "superadmin" | "admin" | "teacher" | "student";
+export type AppRole = "super_admin" | "admin" | "teacher" | "student";
 
 // Map Azure App Role values to app roles
 // These must match the "value" field in your Azure app registration manifest
 export const AZURE_ROLE_MAPPINGS: Record<string, AppRole> = {
-  "SuperAdmin.AccessAll": "superadmin", // Matches manifest value
+  "SuperAdmin.AccessAll": "super_admin", // Matches manifest value
   Admin: "admin",
   Teacher: "teacher",
   Student: "student",

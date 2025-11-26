@@ -55,8 +55,8 @@ const iconMap: Record<string, React.ReactNode> = {
 
 function getSidebarItems(role?: string): SidebarItem[] {
   // Explicit, simplified menus per role as per product spec
-  if (role === "admin" || role === "superadmin") {
-    const dashboardHref = role === "superadmin" ? "/superadmin" : "/admin";
+  if (role === "admin" || role === "super_admin") {
+    const dashboardHref = role === "super_admin" ? "/superadmin" : "/admin";
     const allowed = new Set([
       "/",
       dashboardHref,

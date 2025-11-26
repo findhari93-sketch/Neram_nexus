@@ -24,17 +24,17 @@ export default async function Home() {
           <nav style={{ marginTop: "1.5rem" }}>
             <h2>Available Dashboards:</h2>
             <ul style={{ marginTop: "1rem" }}>
-              {session.user.role === "superadmin" && (
+              {session.user.role === "super_admin" && (
                 <li>
                   <Link href="/superadmin">Super Admin Dashboard</Link>
                 </li>
               )}
-              {["superadmin", "admin"].includes(session.user.role) && (
+              {["super_admin", "admin"].includes(session.user.role) && (
                 <li>
                   <Link href="/admin">Admin Dashboard</Link>
                 </li>
               )}
-              {["superadmin", "admin", "teacher"].includes(
+              {["super_admin", "admin", "teacher"].includes(
                 session.user.role
               ) && (
                 <li>

@@ -47,13 +47,13 @@ export const menuItems: MenuItem[] = [
   {
     label: "Home",
     href: "/",
-    roles: ["superadmin", "admin", "teacher", "student"],
+    roles: ["super_admin", "admin", "teacher", "student"],
     buildBreadcrumbs: defaultBuilder,
   },
   {
     label: "Dashboard",
     href: "/superadmin",
-    roles: ["superadmin"],
+    roles: ["super_admin"],
     buildBreadcrumbs: defaultBuilder,
   },
   {
@@ -65,13 +65,13 @@ export const menuItems: MenuItem[] = [
   {
     label: "Web Users",
     href: "/web-users",
-    roles: ["admin", "superadmin"],
+    roles: ["admin", "super_admin"],
     buildBreadcrumbs: defaultBuilder,
   },
   {
     label: "Class Join Requests",
     href: "/class-requests",
-    roles: ["admin", "superadmin"],
+    roles: ["admin", "super_admin"],
     buildBreadcrumbs: (pathname: string, item: MenuItem) => {
       const crumbs: AppBreadcrumb[] = [
         { label: "Home", href: "/" },
@@ -95,13 +95,13 @@ export const menuItems: MenuItem[] = [
   {
     label: "Teachers",
     href: "/teacher",
-    roles: ["teacher", "admin", "superadmin"],
+    roles: ["teacher", "admin", "super_admin"],
     buildBreadcrumbs: defaultBuilder,
   },
   {
     label: "Students",
     href: "/student",
-    roles: ["student", "teacher", "admin", "superadmin"],
+    roles: ["student", "teacher", "admin", "super_admin"],
     buildBreadcrumbs: defaultBuilder,
   },
 ];

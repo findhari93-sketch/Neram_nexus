@@ -8,10 +8,10 @@ import type { AppRole } from "@/lib/auth-config";
  * Maps route prefixes to required roles (in order of priority)
  */
 const ROUTE_ROLE_MAP: Record<string, AppRole[]> = {
-  "/superadmin": ["superadmin"],
-  "/admin": ["superadmin", "admin"],
-  "/teacher": ["superadmin", "admin", "teacher"],
-  "/student": ["superadmin", "admin", "teacher", "student"],
+  "/superadmin": ["super_admin"],
+  "/admin": ["super_admin", "admin"],
+  "/teacher": ["super_admin", "admin", "teacher"],
+  "/student": ["super_admin", "admin", "teacher", "student"],
 };
 
 /**
