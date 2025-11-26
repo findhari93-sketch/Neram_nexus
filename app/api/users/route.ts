@@ -1,6 +1,7 @@
 // app/api/users/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
 import { z } from "zod";
 
@@ -10,7 +11,7 @@ const UserUpdateSchema = z.object({
     .object({
       student_name: z.string().min(1).max(100).optional(),
       father_name: z.string().min(1).max(100).optional(),
-      gender: z.enum(["male", "female", "other"]).optional(),
+      gender: z.enum(["Male", "Female", "Other", ""]).optional(),
       dob: z.string().optional(),
     })
     .optional(),
@@ -31,18 +32,16 @@ const UserUpdateSchema = z.object({
 
 // Helper to verify user role from session
 async function getUserRole(session: any): Promise<string | null> {
-  if (!session?.user?.email) return null;
+  if (!session?.user) return null;
 
-  // TODO: Fetch actual role from your users table or JWT claims
-  // For now, checking if user exists in session
-  // Replace with: const { data } = await supabase.from('admins').select('role').eq('email', session.user.email).single();
-  return "admin"; // Temporarily returning admin - MUST BE REPLACED
+  // Get role from NextAuth session (set in JWT callback)
+  return (session.user as any)?.role || null;
 }
 
 // GET /api/users - Fetch paginated users with server-side authorization
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession();
+    const session = await getServerSession(authOptions);
 
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -95,19 +94,26 @@ export async function GET(request: NextRequest) {
 // PATCH /api/users/[id] - Update user with validation
 export async function PATCH(request: NextRequest) {
   try {
-    const session = await getServerSession();
+    console.log("🔧 PATCH /api/users - Request received");
+
+    const session = await getServerSession(authOptions);
 
     if (!session) {
+      console.error("❌ No session found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const userRole = await getUserRole(session);
+    console.log("👤 User role:", userRole);
+
     if (!userRole || !["admin", "super_admin"].includes(userRole)) {
+      console.error("❌ Insufficient permissions. Role:", userRole);
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = await request.json();
     const { id, data: updateData } = body;
+    console.log("📝 Update request - ID:", id, "Data:", JSON.stringify(updateData, null, 2));
 
     if (!id) {
       return NextResponse.json({ error: "User ID required" }, { status: 400 });
@@ -116,6 +122,8 @@ export async function PATCH(request: NextRequest) {
     // Validate update data
     const validationResult = UserUpdateSchema.safeParse(updateData);
     if (!validationResult.success) {
+      console.error("Validation failed:", validationResult.error.issues);
+      console.error("Received data:", JSON.stringify(updateData, null, 2));
       return NextResponse.json(
         {
           error: "Validation failed",
@@ -160,10 +168,11 @@ export async function PATCH(request: NextRequest) {
       .eq("id", id);
 
     if (updateError) {
-      console.error("Update error:", updateError);
+      console.error("❌ Database update error:", updateError);
       return NextResponse.json({ error: "Update failed" }, { status: 500 });
     }
 
+    console.log("✅ User updated successfully:", id);
     return NextResponse.json({ success: true, id });
   } catch (error) {
     console.error("API error:", error);
@@ -177,7 +186,7 @@ export async function PATCH(request: NextRequest) {
 // DELETE /api/users/[id] - Delete user with authorization
 export async function DELETE(request: NextRequest) {
   try {
-    const session = await getServerSession();
+    const session = await getServerSession(authOptions);
 
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
