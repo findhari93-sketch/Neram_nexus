@@ -1,6 +1,10 @@
 "use client";
-import React, { useMemo, useState, useEffect, useRef } from "react";
-import { MaterialReactTable, type MRT_ColumnDef } from "material-react-table";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import {
+  MaterialReactTable,
+  type MRT_ColumnDef,
+  type MRT_TableState,
+} from "material-react-table";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { logger } from "@/lib/utils/logger";
 import { useRouter } from "next/navigation";
@@ -22,6 +26,7 @@ import {
   InputAdornment,
   Tooltip,
   CircularProgress,
+  Skeleton,
 } from "@mui/material";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -35,6 +40,12 @@ import CheckIcon from "@mui/icons-material/Check";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { z } from "zod";
 import mrtTheme, { mrtTableProps } from "../mrtTheme";
+
+// Extended table state interface for type safety
+interface ExtendedTableState extends MRT_TableState<NormalizedClassRequest> {
+  editingRowId?: string | number | null;
+  editedData?: Partial<NormalizedClassRequest>;
+}
 
 // Default props used for per-column filter text fields to avoid repetition
 const defaultFilterProps = ({ column }: any) => {
@@ -52,7 +63,7 @@ const defaultFilterProps = ({ column }: any) => {
             onClick={() => column.setFilterValue(undefined)}
             aria-label="Clear filter"
           >
-            ×
+            <ClearIcon fontSize="small" />
           </IconButton>
         </InputAdornment>
       ) : undefined,
@@ -62,6 +73,27 @@ const defaultFilterProps = ({ column }: any) => {
 import ErrorBoundary from "./ErrorBoundary";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
+import {
+  AvatarWithFallback,
+  AdminApprovalCell,
+  ContactFieldCell,
+  DateCell,
+  BoolCell,
+  EditableCell,
+  ProvidersCell,
+  ContactCell,
+  DEFAULT_AVATAR_SIZE,
+} from "../shared/GridComponents";
+import {
+  normalizeAccount,
+  normalizeBasic,
+  normalizeContact,
+  normalizeApplication,
+  normalizeProviders,
+  sanitizeEditedFields,
+  EditDataSchema,
+  EDITABLE_FIELDS,
+} from "../shared/gridUtils";
 
 // Normalized user type for the grid (builds on the Supabase row type)
 interface NormalizedClassRequest extends Record<string, unknown> {
@@ -129,58 +161,7 @@ interface NormalizedClassRequest extends Record<string, unknown> {
 }
 type RawRow = Record<string, any>;
 
-// Zod schemas (permissive, use .passthrough() to allow extra keys)
-const AccountSchema = z
-  .object({
-    photo_url: z.string().nullable().optional(),
-    photoUrl: z.string().nullable().optional(),
-    avatar: z.string().nullable().optional(),
-    image: z.string().nullable().optional(),
-    profile_image: z.string().nullable().optional(),
-    profilePhoto: z.string().nullable().optional(),
-    providers: z.any().optional(),
-    created_at: z.string().nullable().optional(),
-    createdAt: z.string().nullable().optional(),
-    account_type: z.string().nullable().optional(),
-    display_name: z.string().nullable().optional(),
-    name: z.string().nullable().optional(),
-    firebase_uid: z.string().nullable().optional(),
-    uid: z.string().nullable().optional(),
-    last_sign_in: z.string().nullable().optional(),
-    phone_auth_used: z.union([z.boolean(), z.string(), z.null()]).optional(),
-    phone_verified: z.union([z.boolean(), z.string(), z.null()]).optional(),
-  })
-  .passthrough();
-
-const BasicSchema = z
-  .object({
-    student_name: z.string().nullable().optional(),
-    studentName: z.string().nullable().optional(),
-    name: z.string().nullable().optional(),
-    full_name: z.string().nullable().optional(),
-    father_name: z.string().nullable().optional(),
-    fatherName: z.string().nullable().optional(),
-    gender: z.string().nullable().optional(),
-    sex: z.string().nullable().optional(),
-    dob: z.string().nullable().optional(),
-    date_of_birth: z.string().nullable().optional(),
-  })
-  .passthrough();
-
-const ContactSchema = z
-  .object({
-    city: z.string().nullable().optional(),
-    email: z.string().nullable().optional(),
-    primary_email: z.string().nullable().optional(),
-    phone: z.string().nullable().optional(),
-    mobile: z.string().nullable().optional(),
-    state: z.string().nullable().optional(),
-    country: z.string().nullable().optional(),
-    zip_code: z.string().nullable().optional(),
-    zip: z.string().nullable().optional(),
-  })
-  .passthrough();
-
+// File-specific Zod schemas (keep only those not in shared files)
 const EducationSchema = z
   .object({
     education_type: z.string().nullable().optional(),
@@ -191,24 +172,6 @@ const EducationSchema = z
     diploma_course: z.string().nullable().optional(),
     diploma_year: z.string().nullable().optional(),
     school_name: z.string().nullable().optional(),
-  })
-  .passthrough();
-
-const ApplicationSchema = z
-  .object({
-    application_submitted: z
-      .union([z.boolean(), z.string(), z.null()])
-      .optional(),
-    submitted: z.union([z.boolean(), z.string(), z.null()]).optional(),
-    is_submitted: z.union([z.boolean(), z.string(), z.null()]).optional(),
-    app_submitted_date_time: z.string().nullable().optional(),
-    submitted_at: z.string().nullable().optional(),
-    submittedAt: z.string().nullable().optional(),
-    application_admin_approval: z.any().optional(),
-    approved_at: z.string().nullable().optional(),
-    approved_by: z.any().optional(),
-    email_status: z.string().nullable().optional(),
-    email_sent_at: z.string().nullable().optional(),
   })
   .passthrough();
 
@@ -241,8 +204,6 @@ const NormalizedClassRequestSchema = z
   .passthrough();
 
 // Named constants for commonly-used numeric values to avoid magic numbers
-// Default avatar size for the grid (use 24x24 to keep rows compact)
-const DEFAULT_AVATAR_SIZE = 24;
 const DEFAULT_PAGE_SIZE = 50;
 const TABLE_CONTAINER_OFFSET_PX = 280; // used in `calc(100vh - ${TABLE_CONTAINER_OFFSET_PX}px)`
 
@@ -363,337 +324,13 @@ function resolvePhotoFromRow(orig: any): string | undefined {
   return undefined;
 }
 
-const AvatarWithFallback: React.FC<{
-  src?: string | null;
-  name?: string | null;
-  size?: number;
-  placeholderVariant?: "gradient" | "color";
-  placeholderColors?: string[];
-  onClick?: () => void;
-  avatarPath?: string | null;
-}> = React.memo(
-  ({
-    src,
-    name,
-    size = DEFAULT_AVATAR_SIZE,
-    placeholderVariant = "gradient",
-    placeholderColors,
-    onClick,
-    avatarPath,
-  }) => {
-    const [imgFailed, setImgFailed] = useState(false);
-    const [signedUrl, setSignedUrl] = useState<string | null>(null);
-    const [loadingSignedUrl, setLoadingSignedUrl] = useState(false);
+// Memoized small cell components are now imported from shared/GridComponents.tsx
+// Keep only file-specific helpers and normalizers below
 
-    // track mounted state so async image callbacks don't set state after unmount
-    const mountedRef = useRef(true);
-    useEffect(() => {
-      mountedRef.current = true;
-      return () => {
-        mountedRef.current = false;
-      };
-    }, []);
+// File-specific normalization functions (Education, AdminFilled)
+// (These are not in shared gridUtils.ts)
 
-    // Fetch signed URL for private bucket if avatarPath exists
-    useEffect(() => {
-      const fetchSignedUrl = async () => {
-        if (!avatarPath || src) return; // Skip if we already have a public URL
-
-        setLoadingSignedUrl(true);
-        try {
-          let cleanPath = avatarPath.trim();
-          // Remove "avatars/" prefix if present
-          if (cleanPath.startsWith("avatars/")) {
-            cleanPath = cleanPath.substring("avatars/".length);
-          }
-
-          const { data, error } = await supabase.storage
-            .from("avatars")
-            .createSignedUrl(cleanPath, 3600); // 1 hour expiry
-
-          if (error) throw error;
-
-          if (mountedRef.current && data?.signedUrl) {
-            setSignedUrl(data.signedUrl);
-          }
-        } catch (error) {
-          logger.error("Failed to fetch signed URL", error);
-        } finally {
-          if (mountedRef.current) {
-            setLoadingSignedUrl(false);
-          }
-        }
-      };
-
-      fetchSignedUrl();
-    }, [avatarPath, src]);
-
-    const initials = name
-      ? name
-          .split(" ")
-          .filter(Boolean)
-          .map((s: string) => s[0])
-          .slice(0, 2)
-          .join("")
-          .toUpperCase()
-      : undefined;
-
-    // Priority: signedUrl (from private bucket) > src (public URL like Google) > undefined
-    let finalSrc = signedUrl || src || undefined;
-    if (
-      finalSrc &&
-      typeof finalSrc === "string" &&
-      finalSrc.startsWith("http://") &&
-      typeof window !== "undefined"
-    ) {
-      finalSrc = finalSrc.replace(/^http:\/\//i, "https://");
-    }
-
-    // deterministic palette selection based on name
-    const palette =
-      placeholderColors && placeholderColors.length > 0
-        ? placeholderColors
-        : [
-            "#60a5fa",
-            "#f472b6",
-            "#f97316",
-            "#34d399",
-            "#a78bfa",
-            "#06b6d4",
-            "#fb7185",
-            "#f59e0b",
-          ];
-
-    const hashString = (str?: string | null) => {
-      if (!str) return 0;
-      let h = 0;
-      for (let i = 0; i < str.length; i++) {
-        h = (h << 5) - h + str.charCodeAt(i);
-        h |= 0;
-      }
-      return Math.abs(h);
-    };
-
-    const idx = hashString(name) % palette.length;
-    const color1 = palette[idx];
-    const color2 =
-      palette[(idx + Math.floor(palette.length / 2)) % palette.length];
-
-    // color utilities
-    const hexToRgb = (hex: string) => {
-      const h = hex.replace("#", "");
-      const bigint = parseInt(
-        h.length === 3
-          ? h
-              .split("")
-              .map((c) => c + c)
-              .join("")
-          : h,
-        16
-      );
-      return {
-        r: (bigint >> 16) & 255,
-        g: (bigint >> 8) & 255,
-        b: bigint & 255,
-      };
-    };
-
-    const luminance = (hex: string) => {
-      const { r, g, b } = hexToRgb(hex);
-      const srgb = [r, g, b].map((v) => {
-        const s = v / 255;
-        return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-      });
-      return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
-    };
-
-    const avgL = (luminance(color1) + luminance(color2)) / 2;
-    const textColor = avgL > 0.5 ? "#000000" : "#ffffff";
-
-    const placeholderSx: any =
-      placeholderVariant === "gradient"
-        ? {
-            backgroundImage: `linear-gradient(135deg, ${color1} 0%, ${color2} 100%)`,
-          }
-        : { bgcolor: color1 };
-
-    return (
-      <Avatar
-        src={!imgFailed ? finalSrc : undefined}
-        alt={name ?? undefined}
-        onClick={onClick}
-        sx={{
-          width: size,
-          height: size,
-          color: textColor,
-          fontWeight: 600,
-          cursor: "pointer",
-          ...(!finalSrc || imgFailed ? placeholderSx : {}),
-        }}
-        imgProps={{
-          onError: () => {
-            if (mountedRef.current) {
-              setImgFailed(true);
-            }
-          },
-        }}
-      >
-        {!finalSrc || imgFailed ? initials ?? null : null}
-      </Avatar>
-    );
-  }
-);
-
-// Memoized small cell components to reduce per-row work
-const ProvidersCell: React.FC<{ original: NormalizedClassRequest }> =
-  React.memo(({ original }) => {
-    const v = original?.providers;
-    try {
-      if (Array.isArray(v)) return <>{String(v.join(", "))}</>;
-      if (typeof v === "string") return <>{v}</>;
-      return <></>;
-    } catch {
-      return <></>;
-    }
-  });
-
-const ContactCell: React.FC<{ original: NormalizedClassRequest }> = React.memo(
-  ({ original }) => {
-    // Prefer top-level normalized fields when available (these are populated
-    // during normalization). Fall back to the raw `contact` object only when
-    // top-level fields are absent.
-    const topPhone =
-      typeof original.phone === "string" ? original.phone : undefined;
-    const topEmail =
-      typeof original.email === "string" ? original.email : undefined;
-    const topCity =
-      typeof original.city === "string" ? original.city : undefined;
-    const topState =
-      typeof original.state === "string" ? original.state : undefined;
-
-    if (topPhone || topEmail || topCity || topState) {
-      return <>{topPhone ?? topEmail ?? topCity ?? topState}</>;
-    }
-
-    const v = original?.contact as unknown;
-    if (!v && v !== 0) return <></>;
-    if (typeof v === "string" || typeof v === "number") return <>{String(v)}</>;
-    if (typeof v === "object" && v !== null) {
-      const o = v as Record<string, unknown>;
-      const phone = typeof o.phone === "string" ? o.phone : undefined;
-      const email = typeof o.email === "string" ? o.email : undefined;
-      const city = typeof o.city === "string" ? o.city : undefined;
-      const state = typeof o.state === "string" ? o.state : undefined;
-      return <>{phone ?? email ?? city ?? state ?? JSON.stringify(o)}</>;
-    }
-    return <></>;
-  }
-);
-
-// Generic cell to render a single contact field (phone/email/city/state/country/zip)
-const ContactFieldCell: React.FC<{
-  original: NormalizedClassRequest;
-  field: "phone" | "email" | "city" | "state" | "country" | "zip_code";
-}> = React.memo(({ original, field }) => {
-  const getContactField = (
-    orig: NormalizedClassRequest,
-    fld: string
-  ): string | undefined => {
-    const top = orig[fld as keyof NormalizedClassRequest];
-    if (typeof top === "string" && top.trim()) return top;
-
-    const c = orig.contact as unknown;
-    if (c === null || c === undefined) return undefined;
-    if (typeof c === "string" || typeof c === "number") {
-      return String(c);
-    }
-    if (typeof c === "object") {
-      const o = c as Record<string, unknown>;
-      const mapping: Record<string, string[]> = {
-        phone: ["phone", "mobile"],
-        email: ["email", "primary_email"],
-        city: ["city"],
-        state: ["state"],
-        country: ["country"],
-        zip_code: ["zip_code", "zip"],
-      };
-      const keys = mapping[fld] ?? [fld];
-      for (const k of keys) {
-        const v = o[k];
-        if (typeof v === "string" && v.trim()) return v;
-        if (typeof v === "number") return String(v);
-      }
-    }
-    return undefined;
-  };
-
-  const value = getContactField(original, field);
-  return <>{value ?? ""}</>;
-});
-
-const DateCell: React.FC<{
-  value?: string | number | Date | null | undefined;
-}> = React.memo(({ value }) => {
-  if (!value && value !== 0) return <></>;
-  try {
-    return <>{new Date(String(value)).toLocaleString()}</>;
-  } catch {
-    return <>{String(value)}</>;
-  }
-});
-
-const BoolCell: React.FC<{ value?: boolean | any; label?: string }> =
-  React.memo(({ value, label }) => {
-    const checked = Boolean(value);
-    const ariaLabel = label
-      ? `${label}: ${checked ? "yes" : "no"}`
-      : `Value: ${checked ? "yes" : "no"}`;
-
-    return (
-      <Checkbox
-        checked={checked}
-        size="small"
-        // Make the underlying input readOnly so the control remains focusable
-        // and accessible to screen readers while preventing user changes.
-        inputProps={{ "aria-label": ariaLabel, readOnly: true }}
-        onChange={() => {}}
-        title={ariaLabel}
-      />
-    );
-  });
-
-// Editable cell component for inline editing
-const EditableCell: React.FC<{
-  value: any;
-  isEditing: boolean;
-  onChange: (value: any) => void;
-  field: keyof NormalizedClassRequest;
-  placeholder?: string;
-}> = React.memo(({ value, isEditing, onChange, field, placeholder }) => {
-  if (!isEditing) {
-    return <span>{value || "—"}</span>;
-  }
-
-  return (
-    <TextField
-      value={value || ""}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      size="small"
-      fullWidth
-      variant="outlined"
-      sx={{
-        "& .MuiOutlinedInput-root": {
-          fontSize: "0.875rem",
-          backgroundColor: "rgba(25, 118, 210, 0.04)",
-        },
-      }}
-    />
-  );
-});
-
-// Helper: parse a value that may be an object or a JSON string and optionally
-// validate it with a Zod schema. Returns `undefined` on parse/validation failure.
+// parseMaybeJson helper (file-specific version for Education/AdminFilled schemas)
 function parseMaybeJson(value: any, schema?: any) {
   if (value === null || value === undefined) return undefined;
   if (typeof value === "object") {
@@ -716,111 +353,12 @@ function parseMaybeJson(value: any, schema?: any) {
   return undefined;
 }
 
-function normalizeAccount(orig: RawRow, out: any) {
-  let account: any | undefined;
-  const accountSources: Array<[string, any]> = [
-    ["account", orig.account],
-    ["account_details", orig.account_details],
-    ["account_info", orig.account_info],
-    ["auth", orig.auth],
-    ["provider_info", orig.provider_info],
-  ];
-  for (const [key, val] of accountSources) {
-    if (val !== undefined && val !== null) {
-      const parsed = parseMaybeJson(val, AccountSchema);
-      if (parsed === undefined && process.env.NODE_ENV === "development") {
-        logger.warn("Account data failed validation", { key, value: val });
-      }
-      account = account ?? parsed;
-    }
-  }
-  account = account ?? (typeof orig === "object" ? orig : undefined);
+// File-specific cell components removed (now imported from shared)
+// Removed: ProvidersCell, ContactCell, ContactFieldCell, DateCell, BoolCell, AdminApprovalCell, EditableCell
 
-  if (!account) return;
-  out.photo_url =
-    out.photo_url ??
-    account.photo_url ??
-    account.photoUrl ??
-    account.avatar ??
-    account.image ??
-    account.profile_image ??
-    account.profilePhoto ??
-    undefined;
+const _placeholder_removed_components = null; // placeholder to maintain line spacing
 
-  out.providers = out.providers ?? account.providers ?? account.provider;
-  out.created_at = out.created_at ?? account.created_at ?? account.createdAt;
-  out.account_type = out.account_type ?? account.account_type ?? account.type;
-  out.display_name = out.display_name ?? account.display_name ?? account.name;
-  out.firebase_uid = out.firebase_uid ?? account.firebase_uid ?? account.uid;
-  out.phone_auth_used =
-    out.phone_auth_used ??
-    account.phone_auth_used ??
-    account.phone_verified ??
-    false;
-}
-
-function normalizeBasic(orig: RawRow, out: any) {
-  let basic: any | undefined;
-  const basicSources: Array<[string, any]> = [
-    ["basic", orig.basic],
-    ["basic_info", orig.basic_info],
-  ];
-  for (const [key, val] of basicSources) {
-    if (val !== undefined && val !== null) {
-      const parsed = parseMaybeJson(val, BasicSchema);
-      if (parsed === undefined && process.env.NODE_ENV === "development") {
-        logger.warn("Basic data failed validation", { key, value: val });
-      }
-      basic = basic ?? parsed;
-    }
-  }
-  if (basic) {
-    out.student_name =
-      out.student_name ??
-      basic.student_name ??
-      basic.studentName ??
-      basic.name ??
-      basic.full_name ??
-      basic.name ??
-      undefined;
-    out.father_name = out.father_name ?? basic.father_name ?? basic.fatherName;
-    out.gender = out.gender ?? basic.gender ?? basic.sex;
-    out.dob = out.dob ?? basic.dob ?? basic.date_of_birth;
-  } else {
-    // fall back to top-level fields
-    out.student_name =
-      out.student_name ?? orig.student_name ?? orig.display_name ?? orig.name;
-    out.father_name = out.father_name ?? orig.father_name ?? orig.fatherName;
-    out.gender = out.gender ?? orig.gender ?? orig.sex;
-    out.dob = out.dob ?? orig.dob ?? orig.date_of_birth;
-  }
-}
-
-function normalizeContact(orig: RawRow, out: any) {
-  // Keep the nested contact canonical. Populate `out.contact` with the
-  // parsed container (or raw value) and avoid copying individual fields to
-  // top-level keys. Components should prefer `original.phone`/`email` when
-  // explicitly normalized, otherwise read from `original.contact`.
-  let contact: any | undefined;
-  const contactSources: Array<[string, any]> = [
-    ["contact", orig.contact],
-    ["contact_info", orig.contact_info],
-  ];
-  for (const [key, val] of contactSources) {
-    if (val !== undefined && val !== null) {
-      const parsed = parseMaybeJson(val, ContactSchema);
-      if (parsed === undefined && process.env.NODE_ENV === "development") {
-        logger.warn("Contact data failed validation", { key, value: val });
-      }
-      contact = contact ?? parsed ?? val;
-    }
-  }
-
-  if (contact !== undefined) {
-    out.contact = out.contact ?? contact;
-  }
-}
-
+// normalizeEducation - file-specific (not in shared)
 function normalizeEducation(orig: RawRow, out: any) {
   let edu: any | undefined;
   const eduSources: Array<[string, any]> = [
@@ -831,7 +369,7 @@ function normalizeEducation(orig: RawRow, out: any) {
     if (val !== undefined && val !== null) {
       const parsed = parseMaybeJson(val, EducationSchema);
       if (parsed === undefined && process.env.NODE_ENV === "development") {
-        logger.warn("Education data failed validation", { key, value: val });
+        console.warn("Education data failed validation", { key, value: val });
       }
       edu = edu ?? parsed;
     }
@@ -856,61 +394,7 @@ function normalizeEducation(orig: RawRow, out: any) {
   }
 }
 
-function normalizeApplication(orig: RawRow, out: any) {
-  let app: any | undefined;
-  const appSources: Array<[string, any]> = [
-    ["application", orig.application],
-    ["application_info", orig.application_info],
-    ["application_details", orig.application_details],
-    ["applicationDetails", orig.applicationDetails],
-  ];
-  for (const [key, val] of appSources) {
-    if (val !== undefined && val !== null) {
-      const parsed = parseMaybeJson(val, ApplicationSchema);
-      if (parsed === undefined && process.env.NODE_ENV === "development") {
-        logger.warn("Application data failed validation", { key, value: val });
-      }
-      app = app ?? parsed;
-    }
-  }
-  if (!app) {
-    // Fallbacks to top-level
-    out.application_submitted =
-      out.application_submitted ??
-      orig.application_submitted ??
-      orig.submitted ??
-      orig.is_submitted;
-    out.app_submitted_date_time =
-      out.app_submitted_date_time ??
-      orig.app_submitted_date_time ??
-      orig.submitted_at ??
-      orig.submittedAt;
-    out.application_admin_approval =
-      out.application_admin_approval ??
-      orig.application_admin_approval ??
-      orig.applicationAdminApproval;
-    out.approved_at = out.approved_at ?? orig.approved_at ?? orig.approvedAt;
-    out.approved_by = out.approved_by ?? orig.approved_by ?? orig.approvedBy;
-    return;
-  }
-  out.application_submitted =
-    out.application_submitted ??
-    app.application_submitted ??
-    app.submitted ??
-    app.is_submitted;
-  out.app_submitted_date_time =
-    out.app_submitted_date_time ??
-    app.app_submitted_date_time ??
-    app.submitted_at ??
-    app.submittedAt;
-  out.application_admin_approval =
-    out.application_admin_approval ??
-    app.application_admin_approval ??
-    app.applicationAdminApproval;
-  out.approved_at = out.approved_at ?? app.approved_at ?? app.approvedAt;
-  out.approved_by = out.approved_by ?? app.approved_by ?? app.approvedBy;
-}
-
+// normalizeAdminFilled - file-specific (not in shared)
 function normalizeAdminFilled(orig: RawRow, out: any) {
   let adm: any | undefined;
   const admSources: Array<[string, any]> = [
@@ -921,7 +405,7 @@ function normalizeAdminFilled(orig: RawRow, out: any) {
     if (val !== undefined && val !== null) {
       const parsed = parseMaybeJson(val, AdminFilledSchema);
       if (parsed === undefined && process.env.NODE_ENV === "development") {
-        logger.warn("AdminFilled data failed validation", { key, value: val });
+        console.warn("AdminFilled data failed validation", { key, value: val });
       }
       adm = adm ?? parsed;
     }
@@ -962,22 +446,6 @@ function normalizeAdminFilled(orig: RawRow, out: any) {
     out.second_installment_date ?? adm.second_installment_date;
   out.final_fee_payment_amount =
     out.final_fee_payment_amount ?? adm.final_fee_payment_amount;
-}
-
-function normalizeProviders(out: any) {
-  const p = out.providers;
-  if (p === undefined || p === null) return;
-  if (Array.isArray(p)) return;
-  if (typeof p === "string") {
-    const parsed = parseMaybeJson(p);
-    if (parsed !== undefined) {
-      out.providers = Array.isArray(parsed) ? parsed : parsed;
-    } else if (process.env.NODE_ENV === "development") {
-      logger.warn("Providers string failed to parse as JSON", {
-        providers: p,
-      });
-    }
-  }
 }
 
 // Hook to get current user's role from auth system
@@ -1119,11 +587,33 @@ const ClassRequestsGrid: React.FC = () => {
     {}
   );
 
+  // Validation errors for inline display
+  const [validationErrors, setValidationErrors] = useState<
+    Record<string, string>
+  >({});
+
+  // Track unsaved changes for warning
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  useEffect(() => {
+    setHasUnsavedChanges(editingRowId !== null);
+  }, [editingRowId]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
   // Save/error snackbars for edit operations
   const [saveSnackbar, setSaveSnackbar] = useState<{
     open: boolean;
     message: string;
-    severity: "success" | "error";
+    severity: "success" | "error" | "info";
   }>({ open: false, message: "", severity: "success" });
 
   // Delete confirmation dialog state
@@ -1257,34 +747,81 @@ const ClassRequestsGrid: React.FC = () => {
   });
 
   // Action handlers for row action buttons
-  const handleOpen = (orig: NormalizedClassRequest) => {
+  const handleOpen = useCallback((orig: NormalizedClassRequest) => {
     const id = orig.id ?? orig.firebase_uid;
     if (id) {
       router.push(`/class-requests/${String(id)}`);
     }
-  };
+  }, [router]);
 
-  const startEdit = (orig: NormalizedClassRequest) => {
+  const startEdit = useCallback((orig: NormalizedClassRequest) => {
     if (!canEdit || !orig.id) return;
     setEditingRowId(orig.id);
-    // Initialize editedData with current row values
-    setEditedData({ ...orig });
-  };
+    // Reset edited data; fields will be tracked as user changes them
+    setEditedData({});
+  }, [canEdit]);
 
-  const saveEdit = async () => {
-    if (editingRowId === null) return;
+  const saveEdit = useCallback(async () => {
+    if (editingRowId === null) {
+      console.log(
+        "[ClassRequestsGrid] saveEdit called but no editingRowId set"
+      );
+      return;
+    }
+
+    console.log("[ClassRequestsGrid] saveEdit start", {
+      editingRowId,
+      editedData,
+    });
+
+    const sanitizedData = sanitizeEditedFields(editedData);
+    console.log("[ClassRequestsGrid] sanitizedData", sanitizedData);
+
+    if (Object.keys(sanitizedData).length === 0) {
+      setSaveSnackbar({
+        open: true,
+        message: "No changes to save",
+        severity: "info",
+      });
+      console.log("[ClassRequestsGrid] no-op save: no changes");
+      return;
+    }
+
+    // Validate edited data before saving
+    const validation = EditDataSchema.safeParse(sanitizedData);
+    if (!validation.success) {
+      console.warn(
+        "[ClassRequestsGrid] validation failed",
+        validation.error.issues
+      );
+      const errors: Record<string, string> = {};
+      validation.error.issues.forEach((issue) => {
+        if (issue.path[0]) {
+          errors[issue.path[0] as string] = issue.message;
+        }
+      });
+      setValidationErrors(errors);
+      setSaveSnackbar({
+        open: true,
+        message: validation.error.issues[0].message,
+        severity: "error",
+      });
+      return;
+    }
+
+    setValidationErrors({});
 
     // Map flat fields to JSONB structure based on database schema
     const updateData: any = {};
 
     // Fields that go into 'basic' JSONB column
     const basicFields: any = {};
-    if ("student_name" in editedData)
-      basicFields.student_name = editedData.student_name;
-    if ("father_name" in editedData)
-      basicFields.father_name = editedData.father_name;
-    if ("gender" in editedData) basicFields.gender = editedData.gender;
-    if ("dob" in editedData) basicFields.dob = editedData.dob;
+    if ("student_name" in sanitizedData)
+      basicFields.student_name = sanitizedData.student_name;
+    if ("father_name" in sanitizedData)
+      basicFields.father_name = sanitizedData.father_name;
+    if ("gender" in sanitizedData) basicFields.gender = sanitizedData.gender;
+    if ("dob" in sanitizedData) basicFields.dob = sanitizedData.dob;
 
     if (Object.keys(basicFields).length > 0) {
       updateData.basic = basicFields;
@@ -1292,31 +829,47 @@ const ClassRequestsGrid: React.FC = () => {
 
     // Fields that go into 'contact' JSONB column
     const contactFields: any = {};
-    if ("email" in editedData) contactFields.email = editedData.email;
-    if ("phone" in editedData) contactFields.phone = editedData.phone;
-    if ("city" in editedData) contactFields.city = editedData.city;
-    if ("state" in editedData) contactFields.state = editedData.state;
-    if ("country" in editedData) contactFields.country = editedData.country;
-    if ("zip_code" in editedData) contactFields.zip_code = editedData.zip_code;
+    if ("email" in sanitizedData) contactFields.email = sanitizedData.email;
+    if ("phone" in sanitizedData) contactFields.phone = sanitizedData.phone;
+    if ("city" in sanitizedData) contactFields.city = sanitizedData.city;
+    if ("state" in sanitizedData) contactFields.state = sanitizedData.state;
+    if ("country" in sanitizedData)
+      contactFields.country = sanitizedData.country;
+    if ("zip_code" in sanitizedData)
+      contactFields.zip_code = sanitizedData.zip_code;
 
     if (Object.keys(contactFields).length > 0) {
       updateData.contact = contactFields;
     }
 
+    setSaveSnackbar({ open: true, message: "Saving...", severity: "info" });
+    console.log("[ClassRequestsGrid] mutate update", {
+      id: editingRowId,
+      updateData,
+    });
     updateUserMutation.mutate({ id: editingRowId, data: updateData });
-  };
+  }, [editingRowId, editedData, updateUserMutation]);
 
-  const cancelEdit = () => {
+  const cancelEdit = useCallback(() => {
+    // Confirm before discarding changes if user has made edits
+    if (editingRowId !== null && Object.keys(editedData).length > 0) {
+      if (!confirm("Discard unsaved changes?")) {
+        return;
+      }
+    }
+
     setEditingRowId(null);
     setEditedData({});
-  };
+    setValidationErrors({});
+  }, [editingRowId, editedData]);
 
-  const handleFieldChange = (
+  const handleFieldChange = useCallback((
     field: keyof NormalizedClassRequest,
     value: any
   ) => {
+    if (!EDITABLE_FIELDS.includes(field as any)) return;
     setEditedData((prev) => ({ ...prev, [field]: value }));
-  };
+  }, []);
 
   const handleEdit = (orig: NormalizedClassRequest) => {
     if (!canEdit) {
@@ -1327,21 +880,21 @@ const ClassRequestsGrid: React.FC = () => {
   };
 
   // Delete handlers
-  const openDeleteDialog = (orig: NormalizedClassRequest) => {
+  const openDeleteDialog = useCallback((orig: NormalizedClassRequest) => {
     setRequestToDelete(orig);
     setDeleteDialogOpen(true);
-  };
+  }, []);
 
-  const closeDeleteDialog = () => {
+  const closeDeleteDialog = useCallback(() => {
     setDeleteDialogOpen(false);
     setRequestToDelete(null);
-  };
+  }, []);
 
-  const confirmDelete = () => {
+  const confirmDelete = useCallback(() => {
     if (requestToDelete?.id) {
       deleteRequestMutation.mutate(requestToDelete.id);
     }
-  };
+  }, [requestToDelete, deleteRequestMutation]);
 
   const columns = useMemo<MRT_ColumnDef<NormalizedClassRequest>[]>(
     () => [
@@ -1368,22 +921,30 @@ const ClassRequestsGrid: React.FC = () => {
             },
             enableSorting: false,
             enableColumnFilter: false,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedClassRequest;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
               const isSaving =
-                updateUserMutation.isPending && editingRowId === orig.id;
+                updateUserMutation.isPending &&
+                tableState?.editingRowId === orig.id;
 
               if (isEditing) {
+                const hasChanges =
+                  !!tableState?.editedData &&
+                  Object.keys(tableState.editedData as object).length > 0;
                 return (
                   <Box
                     sx={{ display: "flex", gap: 0.5, justifyContent: "center" }}
                   >
-                    <Tooltip title="Save changes" arrow>
+                    <Tooltip
+                      title={hasChanges ? "Save changes" : "No changes to save"}
+                      arrow
+                    >
                       <IconButton
                         size="small"
                         onClick={saveEdit}
-                        disabled={isSaving}
+                        disabled={isSaving || !hasChanges}
                         aria-label="Save changes"
                         sx={{
                           padding: "4px",
@@ -1486,33 +1047,28 @@ const ClassRequestsGrid: React.FC = () => {
             header: "Student Name",
             size: 200,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedClassRequest;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               const name =
                 orig.student_name ??
                 orig.display_name ??
                 orig.name ??
                 `User #${orig.id ?? "Unknown"}`;
 
-              // Extract avatar_path from account JSONB
-              let avatarPath: string | null = null;
-              try {
-                const account =
-                  typeof orig.account === "string"
-                    ? JSON.parse(orig.account)
-                    : orig.account;
-                avatarPath = account?.avatar_path || null;
-              } catch (e) {
-                // Ignore parse errors
-              }
+              // Resolve photo URL from all possible sources (account.photo_url, account.avatar_path, etc.)
+              const photoUrl =
+                resolvePhotoFromRow(orig) ??
+                (orig.photo_url as string | undefined);
 
               return (
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                   <AvatarWithFallback
-                    src={orig.photo_url}
-                    avatarPath={avatarPath}
+                    src={photoUrl}
                     name={name}
+                    userId={orig.id}
                     onClick={() => {
                       // open avatar dialog (implemented below)
                       openAvatar(orig, name as string);
@@ -1520,11 +1076,18 @@ const ClassRequestsGrid: React.FC = () => {
                     size={DEFAULT_AVATAR_SIZE}
                   />
                   <EditableCell
-                    value={isEditing ? editedData.student_name : name}
+                    value={
+                      isEditing
+                        ? (editedData as any).student_name ??
+                          orig.student_name ??
+                          name
+                        : name
+                    }
                     isEditing={isEditing}
                     onChange={(val) => handleFieldChange("student_name", val)}
                     field="student_name"
                     placeholder="Student name"
+                    error={validationErrors.student_name}
                   />
                 </Box>
               );
@@ -1536,16 +1099,25 @@ const ClassRequestsGrid: React.FC = () => {
             header: "Father Name",
             size: 200,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedClassRequest;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               return (
                 <EditableCell
-                  value={isEditing ? editedData.father_name : orig.father_name}
+                  value={
+                    isEditing
+                      ? (editedData as any).father_name ??
+                        orig.father_name ??
+                        ""
+                      : orig.father_name
+                  }
                   isEditing={isEditing}
                   onChange={(val) => handleFieldChange("father_name", val)}
                   field="father_name"
                   placeholder="Father name"
+                  error={validationErrors.father_name}
                 />
               );
             },
@@ -1555,16 +1127,23 @@ const ClassRequestsGrid: React.FC = () => {
             header: "Gender",
             size: 150,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedClassRequest;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               return (
                 <EditableCell
-                  value={isEditing ? editedData.gender : orig.gender}
+                  value={
+                    isEditing
+                      ? (editedData as any).gender ?? orig.gender ?? ""
+                      : orig.gender
+                  }
                   isEditing={isEditing}
                   onChange={(val) => handleFieldChange("gender", val)}
                   field="gender"
                   placeholder="Gender"
+                  error={validationErrors.gender}
                 />
               );
             },
@@ -1581,17 +1160,20 @@ const ClassRequestsGrid: React.FC = () => {
             header: "Phone 1",
             size: 150,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedClassRequest;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               const phone = orig.phone || "";
               return (
                 <EditableCell
-                  value={isEditing ? editedData.phone : phone}
+                  value={isEditing ? (editedData as any).phone ?? phone : phone}
                   isEditing={isEditing}
                   onChange={(val) => handleFieldChange("phone", val)}
                   field="phone"
                   placeholder="Phone"
+                  error={validationErrors.phone}
                 />
               );
             },
@@ -1601,17 +1183,20 @@ const ClassRequestsGrid: React.FC = () => {
             header: "Email",
             size: 240,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedClassRequest;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               const email = orig.email || "";
               return (
                 <EditableCell
-                  value={isEditing ? editedData.email : email}
+                  value={isEditing ? (editedData as any).email ?? email : email}
                   isEditing={isEditing}
                   onChange={(val) => handleFieldChange("email", val)}
                   field="email"
                   placeholder="Email"
+                  error={validationErrors.email}
                 />
               );
             },
@@ -1621,17 +1206,20 @@ const ClassRequestsGrid: React.FC = () => {
             header: "City",
             size: 140,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedClassRequest;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               const city = orig.city || "";
               return (
                 <EditableCell
-                  value={isEditing ? editedData.city : city}
+                  value={isEditing ? (editedData as any).city ?? city : city}
                   isEditing={isEditing}
                   onChange={(val) => handleFieldChange("city", val)}
                   field="city"
                   placeholder="City"
+                  error={validationErrors.city}
                 />
               );
             },
@@ -1641,17 +1229,20 @@ const ClassRequestsGrid: React.FC = () => {
             header: "State",
             size: 160,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedClassRequest;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               const state = orig.state || "";
               return (
                 <EditableCell
-                  value={isEditing ? editedData.state : state}
+                  value={isEditing ? (editedData as any).state ?? state : state}
                   isEditing={isEditing}
                   onChange={(val) => handleFieldChange("state", val)}
                   field="state"
                   placeholder="State"
+                  error={validationErrors.state}
                 />
               );
             },
@@ -1766,6 +1357,9 @@ const ClassRequestsGrid: React.FC = () => {
             header: "Admin Approval",
             size: 200,
             muiFilterTextFieldProps: defaultFilterProps,
+            Cell: ({ row }) => (
+              <AdminApprovalCell original={row.original as NormalizedClassRequest} />
+            ),
           },
           {
             accessorKey: "approved_at",
@@ -2012,11 +1606,20 @@ const ClassRequestsGrid: React.FC = () => {
         ],
       },
     ],
-    [editingRowId, editedData, canEdit, updateUserMutation.isPending]
+    [canEdit, saveEdit, cancelEdit, handleFieldChange, validationErrors, handleOpen, startEdit, openDeleteDialog] // Include all functions and state used in columns
   );
 
   return (
     <Box className="web-users-grid-root">
+      {/* Skeleton loading state for initial load */}
+      {isLoading && rows.length === 0 && (
+        <Box sx={{ p: 2 }}>
+          {[...Array(10)].map((_, i) => (
+            <Skeleton key={i} height={56} sx={{ mb: 1, borderRadius: 1 }} />
+          ))}
+        </Box>
+      )}
+
       {/* Role filter control */}
       {/* role filter removed per request */}
       {/* Show a non-blocking Snackbar with the error message when a fetch fails.
@@ -2141,6 +1744,31 @@ const ClassRequestsGrid: React.FC = () => {
           enableFullScreenToggle
           enableGlobalFilter
           enableColumnFilters
+          muiTableBodyRowProps={({ row, table }) => {
+            const tableState = table.getState() as ExtendedTableState;
+            const isEditing = tableState?.editingRowId === row.original.id;
+
+            return {
+              sx: {
+                bgcolor: isEditing ? "rgba(25, 118, 210, 0.08)" : "transparent",
+                "&:hover": {
+                  bgcolor: isEditing ? "rgba(25, 118, 210, 0.12)" : undefined,
+                },
+              },
+            };
+          }}
+          renderEmptyRowsFallback={() => (
+            <Box sx={{ p: 4, textAlign: "center" }}>
+              <Typography variant="h6" color="text.secondary" gutterBottom>
+                No class requests found
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {isLoading
+                  ? "Loading requests..."
+                  : "Try adjusting your search or filters"}
+              </Typography>
+            </Box>
+          )}
           initialState={{
             density: "compact",
             showGlobalFilter: true,
@@ -2151,11 +1779,16 @@ const ClassRequestsGrid: React.FC = () => {
           muiTableContainerProps={{
             sx: { maxHeight: `calc(100vh - ${TABLE_CONTAINER_OFFSET_PX}px)` },
           }}
-          state={{
-            isLoading: isLoading && rows.length === 0,
-            showProgressBars: isRefetching,
-            pagination,
-          }}
+          state={
+            {
+              isLoading: isLoading && rows.length === 0,
+              showProgressBars: isRefetching,
+              pagination,
+              // Custom state for tracking editing (always include)
+              editingRowId,
+              editedData,
+            } as any
+          }
           manualPagination
           rowCount={rowCount}
           onPaginationChange={setPagination}
@@ -2207,6 +1840,12 @@ const ClassRequestsGrid: React.FC = () => {
         <Dialog
           open={deleteDialogOpen}
           onClose={closeDeleteDialog}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !deleteRequestMutation.isPending) {
+              e.preventDefault();
+              confirmDelete();
+            }
+          }}
           maxWidth="xs"
           fullWidth
           aria-labelledby="delete-dialog-title"
@@ -2217,6 +1856,9 @@ const ClassRequestsGrid: React.FC = () => {
           >
             <DeleteIcon sx={{ color: "error.main" }} />
             <Box sx={{ flex: 1 }}>Confirm Delete</Box>
+            <Typography variant="caption" color="text.secondary" sx={{ mr: 2 }}>
+              Press Enter to confirm, Esc to cancel
+            </Typography>
             <IconButton
               aria-label="close"
               onClick={closeDeleteDialog}

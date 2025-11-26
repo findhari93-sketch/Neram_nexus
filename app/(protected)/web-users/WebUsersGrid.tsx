@@ -53,6 +53,28 @@ import CheckIcon from "@mui/icons-material/Check";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { z } from "zod";
 import mrtTheme, { mrtTableProps } from "../mrtTheme";
+import {
+  AvatarWithFallback,
+  AdminApprovalCell,
+  ContactFieldCell,
+  DateCell,
+  BoolCell,
+  EditableCell,
+  ProvidersCell,
+  ContactCell,
+  DEFAULT_AVATAR_SIZE,
+} from "../shared/GridComponents";
+import {
+  normalizeAccount,
+  normalizeBasic,
+  normalizeContact,
+  normalizeApplication,
+  normalizeProviders,
+  sanitizeEditedFields,
+  EditDataSchema,
+  EDITABLE_FIELDS,
+  parseMaybeJson,
+} from "../shared/gridUtils";
 
 // Extended table state interface for type safety
 interface ExtendedTableState extends MRT_TableState<NormalizedUser> {
@@ -151,60 +173,14 @@ interface NormalizedUser extends Record<string, unknown> {
   signature?: string;
   installment_type?: string;
 }
+// File-specific type for raw rows (extends the shared RawRow type)
 type RawRow = Record<string, any>;
 
 // Zod schemas (permissive, use .passthrough() to allow extra keys)
-const AccountSchema = z
-  .object({
-    photo_url: z.string().nullable().optional(),
-    photoUrl: z.string().nullable().optional(),
-    avatar: z.string().nullable().optional(),
-    image: z.string().nullable().optional(),
-    profile_image: z.string().nullable().optional(),
-    profilePhoto: z.string().nullable().optional(),
-    providers: z.any().optional(),
-    created_at: z.string().nullable().optional(),
-    createdAt: z.string().nullable().optional(),
-    account_type: z.string().nullable().optional(),
-    display_name: z.string().nullable().optional(),
-    name: z.string().nullable().optional(),
-    firebase_uid: z.string().nullable().optional(),
-    uid: z.string().nullable().optional(),
-    last_sign_in: z.string().nullable().optional(),
-    phone_auth_used: z.union([z.boolean(), z.string(), z.null()]).optional(),
-    phone_verified: z.union([z.boolean(), z.string(), z.null()]).optional(),
-  })
-  .passthrough();
+// Note: Shared schemas (Account, Basic, Contact, Application) are now imported from gridUtils
+// These are file-specific schemas only:
 
-const BasicSchema = z
-  .object({
-    student_name: z.string().nullable().optional(),
-    studentName: z.string().nullable().optional(),
-    name: z.string().nullable().optional(),
-    full_name: z.string().nullable().optional(),
-    father_name: z.string().nullable().optional(),
-    fatherName: z.string().nullable().optional(),
-    gender: z.string().nullable().optional(),
-    sex: z.string().nullable().optional(),
-    dob: z.string().nullable().optional(),
-    date_of_birth: z.string().nullable().optional(),
-  })
-  .passthrough();
-
-const ContactSchema = z
-  .object({
-    city: z.string().nullable().optional(),
-    email: z.string().nullable().optional(),
-    primary_email: z.string().nullable().optional(),
-    phone: z.string().nullable().optional(),
-    mobile: z.string().nullable().optional(),
-    state: z.string().nullable().optional(),
-    country: z.string().nullable().optional(),
-    zip_code: z.string().nullable().optional(),
-    zip: z.string().nullable().optional(),
-  })
-  .passthrough();
-
+// Education schema - file-specific
 const EducationSchema = z
   .object({
     education_type: z.string().nullable().optional(),
@@ -218,24 +194,7 @@ const EducationSchema = z
   })
   .passthrough();
 
-const ApplicationSchema = z
-  .object({
-    application_submitted: z
-      .union([z.boolean(), z.string(), z.null()])
-      .optional(),
-    submitted: z.union([z.boolean(), z.string(), z.null()]).optional(),
-    is_submitted: z.union([z.boolean(), z.string(), z.null()]).optional(),
-    app_submitted_date_time: z.string().nullable().optional(),
-    submitted_at: z.string().nullable().optional(),
-    submittedAt: z.string().nullable().optional(),
-    application_admin_approval: z.any().optional(),
-    approved_at: z.string().nullable().optional(),
-    approved_by: z.any().optional(),
-    email_status: z.string().nullable().optional(),
-    email_sent_at: z.string().nullable().optional(),
-  })
-  .passthrough();
-
+// AdminFilled schema - file-specific
 const AdminFilledSchema = z
   .object({
     discount: z.any().optional(),
@@ -246,31 +205,8 @@ const AdminFilledSchema = z
   })
   .passthrough();
 
+// Providers schema - file-specific
 const ProvidersSchema = z.any();
-
-// Edit data validation schema for inline editing
-const EditDataSchema = z.object({
-  student_name: z
-    .string()
-    .min(1, "Name is required")
-    .max(100)
-    .optional()
-    .or(z.literal("")),
-  father_name: z.string().min(1).max(100).optional().or(z.literal("")),
-  email: z.string().email("Invalid email address").optional().or(z.literal("")),
-  phone: z
-    .string()
-    .regex(/^[0-9+\-\s()]+$/, "Invalid phone number")
-    .min(10, "Phone number too short")
-    .max(20, "Phone number too long")
-    .optional()
-    .or(z.literal("")),
-  city: z.string().max(100).optional().or(z.literal("")),
-  state: z.string().max(100).optional().or(z.literal("")),
-  country: z.string().max(100).optional().or(z.literal("")),
-  zip_code: z.string().max(20).optional().or(z.literal("")),
-  gender: z.enum(["Male", "Female", "Other", ""]).optional(),
-});
 
 // Zod schema for the normalized user shape. We allow rows without names
 // and will provide a fallback (User #ID) in the UI when rendering.
@@ -289,585 +225,22 @@ const NormalizedUserSchema = z
   .passthrough();
 
 // Named constants for commonly-used numeric values to avoid magic numbers
-// Default avatar size for the grid (use 24x24 to keep rows compact)
-const DEFAULT_AVATAR_SIZE = 24;
+// Note: DEFAULT_AVATAR_SIZE is now imported from GridComponents
 const DEFAULT_PAGE_SIZE = 50;
 const TABLE_CONTAINER_OFFSET_PX = 280; // used in `calc(100vh - ${TABLE_CONTAINER_OFFSET_PX}px)`
 
-// AvatarWithFallback: consistent solid color avatars with photo loading state and timeout.
-const AvatarWithFallback: React.FC<{
-  src?: string | null;
-  name?: string | null;
-  userId?: string | number;
-  size?: number;
-  onClick?: () => void;
-}> = React.memo(
-  ({ src, name, userId, size = DEFAULT_AVATAR_SIZE, onClick }) => {
-    // Three-state machine: 'loading' | 'loaded' | 'error'
-    const [imgStatus, setImgStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+// Note: All shared cell components (AvatarWithFallback, ProvidersCell, ContactCell,
+// ContactFieldCell, DateCell, BoolCell, AdminApprovalCell, EditableCell) are now
+// imported from GridComponents.tsx
 
-    // track mounted state so async callbacks don't set state after unmount
-    const mountedRef = useRef(true);
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+// Note: parseMaybeJson utility function is now imported from gridUtils.ts
 
-    useEffect(() => {
-      mountedRef.current = true;
-      return () => {
-        mountedRef.current = false;
-        // Clear timeout on unmount
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-          timeoutRef.current = null;
-        }
-      };
-    }, []);
+// Note: Shared normalization functions (normalizeAccount, normalizeBasic, normalizeContact,
+// normalizeApplication, normalizeProviders) are now imported from gridUtils.ts
 
-    // Normalize and validate image URL
-    const finalSrc = useMemo(() => {
-      if (!src || typeof src !== "string") return null;
+// File-specific normalization functions below:
 
-      const trimmed = src.trim();
-      if (!trimmed) return null;
-
-      if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-        return null;
-      }
-
-      return trimmed.replace(/^http:\/\//i, "https://");
-    }, [src]);
-
-    // Reset state when src changes and start timeout
-    useEffect(() => {
-      // Clear any existing timeout
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-
-      if (!finalSrc) {
-        setImgStatus('error');
-        return;
-      }
-
-      setImgStatus('loading');
-
-      // Preload image with CORS handling
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-
-      const handleLoad = () => {
-        if (mountedRef.current) {
-          setImgStatus('loaded');
-          if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-          }
-          console.log('✅ Image loaded:', name);
-        }
-      };
-
-      const handleError = () => {
-        if (mountedRef.current) {
-          setImgStatus('error');
-          if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-          }
-          console.log('❌ Image error:', name, finalSrc);
-        }
-      };
-
-      img.addEventListener('load', handleLoad);
-      img.addEventListener('error', handleError);
-
-      // Set 5-second timeout
-      timeoutRef.current = setTimeout(() => {
-        if (mountedRef.current && imgStatus === 'loading') {
-          setImgStatus('error');
-          console.log('⏱️ Image load timeout:', name, finalSrc);
-        }
-        timeoutRef.current = null;
-      }, 5000);
-
-      img.src = finalSrc;
-
-      return () => {
-        img.removeEventListener('load', handleLoad);
-        img.removeEventListener('error', handleError);
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-          timeoutRef.current = null;
-        }
-      };
-    }, [finalSrc, name]);
-
-    // Extract initials from name
-    const initials = useMemo(() => {
-      if (!name) return "?";
-      return name
-        .split(" ")
-        .filter(Boolean)
-        .map((s: string) => s[0])
-        .slice(0, 2)
-        .join("")
-        .toUpperCase();
-    }, [name]);
-
-    // Consistent Material Design palette for placeholders
-    const colorPalette = useMemo(
-      () => [
-        "#1976d2", // Blue
-        "#388e3c", // Green
-        "#d32f2f", // Red
-        "#7b1fa2", // Purple
-        "#f57c00", // Orange
-        "#0097a7", // Cyan
-        "#c2185b", // Pink
-        "#5d4037", // Brown
-        "#455a64", // Blue Grey
-        "#e64a19", // Deep Orange
-      ],
-      []
-    );
-
-    const backgroundColor = useMemo(() => {
-      const seed = userId ? String(userId) : name || "default";
-      let hash = 0;
-      for (let i = 0; i < seed.length; i++) {
-        hash = (hash << 5) - hash + seed.charCodeAt(i);
-        hash |= 0;
-      }
-      return colorPalette[Math.abs(hash) % colorPalette.length];
-    }, [userId, name, colorPalette]);
-
-    const showImage = imgStatus === 'loaded';
-    const showSpinner = imgStatus === 'loading';
-    const showInitials = imgStatus === 'error' || !finalSrc;
-
-    return (
-      <Box sx={{ position: "relative", display: "inline-flex" }}>
-        <Avatar
-          src={showImage ? finalSrc ?? undefined : undefined}
-          alt={name || "User"}
-          onClick={onClick}
-          sx={{
-            width: size,
-            height: size,
-            bgcolor: backgroundColor,
-            color: "#ffffff",
-            fontWeight: 600,
-            fontSize: size * 0.4,
-            cursor: onClick ? "pointer" : "default",
-            transition: "all 0.2s ease",
-            "&:hover": onClick
-              ? {
-                  transform: "scale(1.05)",
-                  boxShadow: 2,
-                }
-              : undefined,
-          }}
-        >
-          {showInitials ? initials : null}
-        </Avatar>
-        {showSpinner && (
-          <CircularProgress
-            size={size * 0.5}
-            thickness={4}
-            sx={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              marginTop: `-${size * 0.25}px`,
-              marginLeft: `-${size * 0.25}px`,
-              color: "rgba(255, 255, 255, 0.8)",
-            }}
-          />
-        )}
-      </Box>
-    );
-  }
-);
-
-// Memoized small cell components to reduce per-row work
-const ProvidersCell: React.FC<{ original: NormalizedUser }> = React.memo(
-  ({ original }) => {
-    const v = original?.providers;
-    try {
-      if (Array.isArray(v)) return <>{String(v.join(", "))}</>;
-      if (typeof v === "string") return <>{v}</>;
-      return <></>;
-    } catch {
-      return <></>;
-    }
-  }
-);
-
-const ContactCell: React.FC<{ original: NormalizedUser }> = React.memo(
-  ({ original }) => {
-    // Prefer top-level normalized fields when available (these are populated
-    // during normalization). Fall back to the raw `contact` object only when
-    // top-level fields are absent.
-    const topPhone =
-      typeof original.phone === "string" ? original.phone : undefined;
-    const topEmail =
-      typeof original.email === "string" ? original.email : undefined;
-    const topCity =
-      typeof original.city === "string" ? original.city : undefined;
-    const topState =
-      typeof original.state === "string" ? original.state : undefined;
-
-    if (topPhone || topEmail || topCity || topState) {
-      return <>{topPhone ?? topEmail ?? topCity ?? topState}</>;
-    }
-
-    const v = original?.contact as unknown;
-    if (!v && v !== 0) return <></>;
-    if (typeof v === "string" || typeof v === "number") return <>{String(v)}</>;
-    if (typeof v === "object" && v !== null) {
-      const o = v as Record<string, unknown>;
-      const phone = typeof o.phone === "string" ? o.phone : undefined;
-      const email = typeof o.email === "string" ? o.email : undefined;
-      const city = typeof o.city === "string" ? o.city : undefined;
-      const state = typeof o.state === "string" ? o.state : undefined;
-      return <>{phone ?? email ?? city ?? state ?? JSON.stringify(o)}</>;
-    }
-    return <></>;
-  }
-);
-
-// Generic cell to render a single contact field (phone/email/city/state/country/zip)
-const ContactFieldCell: React.FC<{
-  original: NormalizedUser;
-  field: "phone" | "email" | "city" | "state" | "country" | "zip_code";
-}> = React.memo(({ original, field }) => {
-  const getContactField = (
-    orig: NormalizedUser,
-    fld: string
-  ): string | undefined => {
-    const top = orig[fld as keyof NormalizedUser];
-    if (typeof top === "string" && top.trim()) return top;
-
-    const c = orig.contact as unknown;
-    if (c === null || c === undefined) return undefined;
-    if (typeof c === "string" || typeof c === "number") {
-      return String(c);
-    }
-    if (typeof c === "object") {
-      const o = c as Record<string, unknown>;
-      const mapping: Record<string, string[]> = {
-        phone: ["phone", "mobile"],
-        email: ["email", "primary_email"],
-        city: ["city"],
-        state: ["state"],
-        country: ["country"],
-        zip_code: ["zip_code", "zip"],
-      };
-      const keys = mapping[fld] ?? [fld];
-      for (const k of keys) {
-        const v = o[k];
-        if (typeof v === "string" && v.trim()) return v;
-        if (typeof v === "number") return String(v);
-      }
-    }
-    return undefined;
-  };
-
-  const value = getContactField(original, field);
-  return <>{value ?? ""}</>;
-});
-
-const DateCell: React.FC<{
-  value?: string | number | Date | null | undefined;
-}> = React.memo(({ value }) => {
-  if (!value && value !== 0) return <></>;
-  try {
-    return <>{new Date(String(value)).toLocaleString()}</>;
-  } catch {
-    return <>{String(value)}</>;
-  }
-});
-
-const BoolCell: React.FC<{ value?: boolean | any; label?: string }> =
-  React.memo(({ value, label }) => {
-    const checked = Boolean(value);
-    const ariaLabel = label
-      ? `${label}: ${checked ? "yes" : "no"}`
-      : `Value: ${checked ? "yes" : "no"}`;
-
-    return (
-      <Checkbox
-        checked={checked}
-        size="small"
-        // Make the underlying input readOnly so the control remains focusable
-        // and accessible to screen readers while preventing user changes.
-        inputProps={{ "aria-label": ariaLabel, readOnly: true }}
-        onChange={() => {}}
-        title={ariaLabel}
-      />
-    );
-  });
-
-// Admin Approval cell component that shows appropriate status based on submission
-const AdminApprovalCell: React.FC<{ original: NormalizedUser }> = React.memo(
-  ({ original }) => {
-    const isSubmitted = Boolean(original.application_submitted);
-    const approvalStatus = original.application_admin_approval;
-
-    // If application not submitted, show "Not Submitted"
-    if (!isSubmitted) {
-      return (
-        <Chip
-          label="Not Submitted"
-          size="small"
-          sx={{
-            bgcolor: "#f5f5f5",
-            color: "#666",
-            fontWeight: 500,
-          }}
-        />
-      );
-    }
-
-    // If submitted, check the approval status
-    const status = String(approvalStatus || "").toLowerCase();
-
-    if (status === "approved") {
-      return (
-        <Chip
-          label="Approved"
-          size="small"
-          sx={{
-            bgcolor: "#4caf50",
-            color: "#fff",
-            fontWeight: 500,
-          }}
-        />
-      );
-    } else if (status === "rejected") {
-      return (
-        <Chip
-          label="Rejected"
-          size="small"
-          sx={{
-            bgcolor: "#f44336",
-            color: "#fff",
-            fontWeight: 500,
-          }}
-        />
-      );
-    } else {
-      // Application submitted but not yet approved/rejected = Pending
-      return (
-        <Chip
-          label="Pending"
-          size="small"
-          sx={{
-            bgcolor: "#ff9800",
-            color: "#fff",
-            fontWeight: 500,
-          }}
-        />
-      );
-    }
-  }
-);
-
-// Editable cell component for inline editing
-const EditableCell: React.FC<{
-  value: any;
-  isEditing: boolean;
-  onChange: (value: any) => void;
-  field: keyof NormalizedUser;
-  placeholder?: string;
-  error?: string;
-}> = React.memo(({ value, isEditing, onChange, field, placeholder, error }) => {
-  if (!isEditing) {
-    return <span>{value || "—"}</span>;
-  }
-
-  return (
-    <TextField
-      value={value || ""}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      size="small"
-      fullWidth
-      variant="outlined"
-      error={!!error}
-      helperText={error}
-      sx={{
-        "& .MuiOutlinedInput-root": {
-          fontSize: "0.875rem",
-          backgroundColor: "rgba(25, 118, 210, 0.04)",
-        },
-      }}
-    />
-  );
-});
-
-// Helper: parse a value that may be an object or a JSON string and optionally
-// validate it with a Zod schema. Returns `undefined` on parse/validation failure.
-function parseMaybeJson(value: any, schema?: any) {
-  if (value === null || value === undefined) return undefined;
-  if (typeof value === "object") {
-    if (!schema) return value;
-    const res = schema.safeParse(value);
-    return res.success ? res.data : undefined;
-  }
-  if (typeof value === "string") {
-    const s = value.trim();
-    if (!s) return undefined;
-    try {
-      const parsed = JSON.parse(s);
-      if (!schema) return parsed;
-      const res = schema.safeParse(parsed);
-      return res.success ? res.data : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
-}
-
-function normalizeAccount(orig: RawRow, out: any) {
-  let account: any | undefined;
-  const accountSources: Array<[string, any]> = [
-    ["account", orig.account],
-    ["account_details", orig.account_details],
-    ["account_info", orig.account_info],
-    ["auth", orig.auth],
-    ["provider_info", orig.provider_info],
-  ];
-  for (const [key, val] of accountSources) {
-    if (val !== undefined && val !== null) {
-      const parsed = parseMaybeJson(val, AccountSchema);
-      // If schema validation fails, try to use the raw parsed value as fallback
-      if (parsed === undefined) {
-        // Attempt parsing without schema validation for more lenient handling
-        const fallbackParsed = parseMaybeJson(val);
-        account = account ?? fallbackParsed;
-        if (process.env.NODE_ENV === "development" && !fallbackParsed) {
-          // eslint-disable-next-line no-console
-          console.warn("Account data failed validation and parsing", {
-            key,
-            value: val,
-          });
-        }
-      } else {
-        account = account ?? parsed;
-      }
-    }
-  }
-  account = account ?? (typeof orig === "object" ? orig : undefined);
-
-  if (!account) return;
-  out.photo_url =
-    out.photo_url ??
-    account.photo_url ??
-    account.photoUrl ??
-    account.avatar ??
-    account.image ??
-    account.profile_image ??
-    account.profilePhoto ??
-    undefined;
-
-  out.providers = out.providers ?? account.providers ?? account.provider;
-  out.created_at = out.created_at ?? account.created_at ?? account.createdAt;
-  out.last_sign_in =
-    out.last_sign_in ??
-    account.last_sign_in ??
-    account.lastSignIn ??
-    account.last_login;
-  out.account_type = out.account_type ?? account.account_type ?? account.type;
-  out.display_name = out.display_name ?? account.display_name ?? account.name;
-  out.firebase_uid = out.firebase_uid ?? account.firebase_uid ?? account.uid;
-  out.phone_auth_used =
-    out.phone_auth_used ??
-    account.phone_auth_used ??
-    account.phone_verified ??
-    false;
-}
-
-function normalizeBasic(orig: RawRow, out: any) {
-  let basic: any | undefined;
-  const basicSources: Array<[string, any]> = [
-    ["basic", orig.basic],
-    ["basic_info", orig.basic_info],
-  ];
-  for (const [key, val] of basicSources) {
-    if (val !== undefined && val !== null) {
-      const parsed = parseMaybeJson(val, BasicSchema);
-      if (parsed === undefined && process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.warn("Basic data failed validation", { key, value: val });
-      }
-      basic = basic ?? parsed;
-    }
-  }
-  if (basic) {
-    out.student_name =
-      out.student_name ??
-      basic.student_name ??
-      basic.studentName ??
-      basic.name ??
-      basic.full_name ??
-      basic.name ??
-      undefined;
-    out.father_name = out.father_name ?? basic.father_name ?? basic.fatherName;
-    out.gender = out.gender ?? basic.gender ?? basic.sex;
-    out.dob = out.dob ?? basic.dob ?? basic.date_of_birth;
-  } else {
-    // fall back to top-level fields
-    out.student_name =
-      out.student_name ?? orig.student_name ?? orig.display_name ?? orig.name;
-    out.father_name = out.father_name ?? orig.father_name ?? orig.fatherName;
-    out.gender = out.gender ?? orig.gender ?? orig.sex;
-    out.dob = out.dob ?? orig.dob ?? orig.date_of_birth;
-  }
-}
-
-function normalizeContact(orig: RawRow, out: any) {
-  // Parse and store the nested contact object, then extract individual fields
-  // to top-level keys for easier access in components
-  let contact: any | undefined;
-  const contactSources: Array<[string, any]> = [
-    ["contact", orig.contact],
-    ["contact_info", orig.contact_info],
-  ];
-  for (const [key, val] of contactSources) {
-    if (val !== undefined && val !== null) {
-      const parsed = parseMaybeJson(val, ContactSchema);
-      if (parsed === undefined && process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.warn("Contact data failed validation", { key, value: val });
-      }
-      contact = contact ?? parsed ?? val;
-    }
-  }
-
-  if (contact !== undefined) {
-    out.contact = out.contact ?? contact;
-  }
-
-  // Extract individual contact fields to top-level for easier access
-  if (contact && typeof contact === "object") {
-    out.email = out.email ?? contact.email ?? contact.primary_email;
-    out.phone = out.phone ?? contact.phone ?? contact.mobile;
-    out.city = out.city ?? contact.city;
-    out.state = out.state ?? contact.state;
-    out.country = out.country ?? contact.country;
-    out.zip_code = out.zip_code ?? contact.zip_code ?? contact.zip;
-  } else {
-    // Fallback to top-level fields if contact object doesn't exist
-    out.email = out.email ?? orig.email ?? orig.primary_email;
-    out.phone = out.phone ?? orig.phone ?? orig.mobile;
-    out.city = out.city ?? orig.city;
-    out.state = out.state ?? orig.state;
-    out.country = out.country ?? orig.country;
-    out.zip_code = out.zip_code ?? orig.zip_code ?? orig.zip;
-  }
-}
-
+// File-specific: normalizeEducation (not in shared utils)
 function normalizeEducation(orig: RawRow, out: any) {
   let edu: any | undefined;
   const eduSources: Array<[string, any]> = [
@@ -904,62 +277,7 @@ function normalizeEducation(orig: RawRow, out: any) {
   }
 }
 
-function normalizeApplication(orig: RawRow, out: any) {
-  let app: any | undefined;
-  const appSources: Array<[string, any]> = [
-    ["application", orig.application],
-    ["application_info", orig.application_info],
-    ["application_details", orig.application_details],
-    ["applicationDetails", orig.applicationDetails],
-  ];
-  for (const [key, val] of appSources) {
-    if (val !== undefined && val !== null) {
-      const parsed = parseMaybeJson(val, ApplicationSchema);
-      if (parsed === undefined && process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.warn("Application data failed validation", { key, value: val });
-      }
-      app = app ?? parsed;
-    }
-  }
-  if (!app) {
-    // Fallbacks to top-level
-    out.application_submitted =
-      out.application_submitted ??
-      orig.application_submitted ??
-      orig.submitted ??
-      orig.is_submitted;
-    out.app_submitted_date_time =
-      out.app_submitted_date_time ??
-      orig.app_submitted_date_time ??
-      orig.submitted_at ??
-      orig.submittedAt;
-    out.application_admin_approval =
-      out.application_admin_approval ??
-      orig.application_admin_approval ??
-      orig.applicationAdminApproval;
-    out.approved_at = out.approved_at ?? orig.approved_at ?? orig.approvedAt;
-    out.approved_by = out.approved_by ?? orig.approved_by ?? orig.approvedBy;
-    return;
-  }
-  out.application_submitted =
-    out.application_submitted ??
-    app.application_submitted ??
-    app.submitted ??
-    app.is_submitted;
-  out.app_submitted_date_time =
-    out.app_submitted_date_time ??
-    app.app_submitted_date_time ??
-    app.submitted_at ??
-    app.submittedAt;
-  out.application_admin_approval =
-    out.application_admin_approval ??
-    app.application_admin_approval ??
-    app.applicationAdminApproval;
-  out.approved_at = out.approved_at ?? app.approved_at ?? app.approvedAt;
-  out.approved_by = out.approved_by ?? app.approved_by ?? app.approvedBy;
-}
-
+// File-specific: normalizeAdminFilled (not in shared utils)
 function normalizeAdminFilled(orig: RawRow, out: any) {
   let adm: any | undefined;
   const admSources: Array<[string, any]> = [
@@ -1012,23 +330,6 @@ function normalizeAdminFilled(orig: RawRow, out: any) {
     out.second_installment_date ?? adm.second_installment_date;
   out.final_fee_payment_amount =
     out.final_fee_payment_amount ?? adm.final_fee_payment_amount;
-}
-
-function normalizeProviders(out: any) {
-  const p = out.providers;
-  if (p === undefined || p === null) return;
-  if (Array.isArray(p)) return;
-  if (typeof p === "string") {
-    const parsed = parseMaybeJson(p);
-    if (parsed !== undefined) {
-      out.providers = Array.isArray(parsed) ? parsed : parsed;
-    } else if (process.env.NODE_ENV === "development") {
-      // eslint-disable-next-line no-console
-      console.warn("Providers string failed to parse as JSON", {
-        providers: p,
-      });
-    }
-  }
 }
 
 const WebUsersGrid: React.FC = () => {
@@ -1146,7 +447,7 @@ const WebUsersGrid: React.FC = () => {
   const [saveSnackbar, setSaveSnackbar] = useState<{
     open: boolean;
     message: string;
-    severity: "success" | "error";
+    severity: "success" | "error" | "info";
   }>({ open: false, message: "", severity: "success" });
 
   // Validation errors for inline display
@@ -1218,27 +519,48 @@ const WebUsersGrid: React.FC = () => {
   });
 
   // Action handlers for row action buttons
-  const handleOpen = (orig: NormalizedUser) => {
+  const handleOpen = useCallback((orig: NormalizedUser) => {
     const id = orig.id ?? orig.firebase_uid;
     if (id) {
       router.push(`/web-users/${String(id)}`);
     }
-  };
+  }, [router]);
 
-  const startEdit = (orig: NormalizedUser) => {
+  const startEdit = useCallback((orig: NormalizedUser) => {
     if (!canEdit || !orig.id) return;
     setEditingRowId(orig.id);
-    // Initialize editedData with current row values
-    setEditedData({ ...orig });
-  };
+    // Reset edited data; fields will be tracked as user changes them
+    setEditedData({});
+  }, [canEdit]);
 
-  const saveEdit = async () => {
-    if (editingRowId === null) return;
+  const saveEdit = useCallback(async () => {
+    if (editingRowId === null) {
+      console.log("[WebUsersGrid] saveEdit called but no editingRowId set");
+      return;
+    }
+
+    console.log("[WebUsersGrid] saveEdit start", {
+      editingRowId,
+      editedData,
+    });
+
+    const sanitizedData = sanitizeEditedFields(editedData);
+    console.log("[WebUsersGrid] sanitizedData", sanitizedData);
+    if (Object.keys(sanitizedData).length === 0) {
+      setSaveSnackbar({
+        open: true,
+        message: "No changes to save",
+        severity: "info",
+      });
+      console.log("[WebUsersGrid] no-op save: no changes");
+      return;
+    }
 
     // Validate edited data before saving
-    const validation = EditDataSchema.safeParse(editedData);
+    const validation = EditDataSchema.safeParse(sanitizedData);
 
     if (!validation.success) {
+      console.warn("[WebUsersGrid] validation failed", validation.error.issues);
       // Build field-specific errors for inline display
       const errors: Record<string, string> = {};
       validation.error.issues.forEach((issue) => {
@@ -1265,12 +587,12 @@ const WebUsersGrid: React.FC = () => {
 
     // Fields that go into 'basic' JSONB column
     const basicFields: any = {};
-    if ("student_name" in editedData)
-      basicFields.student_name = editedData.student_name;
-    if ("father_name" in editedData)
-      basicFields.father_name = editedData.father_name;
-    if ("gender" in editedData) basicFields.gender = editedData.gender;
-    if ("dob" in editedData) basicFields.dob = editedData.dob;
+    if ("student_name" in sanitizedData)
+      basicFields.student_name = sanitizedData.student_name;
+    if ("father_name" in sanitizedData)
+      basicFields.father_name = sanitizedData.father_name;
+    if ("gender" in sanitizedData) basicFields.gender = sanitizedData.gender;
+    if ("dob" in sanitizedData) basicFields.dob = sanitizedData.dob;
 
     if (Object.keys(basicFields).length > 0) {
       updateData.basic = basicFields;
@@ -1278,21 +600,29 @@ const WebUsersGrid: React.FC = () => {
 
     // Fields that go into 'contact' JSONB column
     const contactFields: any = {};
-    if ("email" in editedData) contactFields.email = editedData.email;
-    if ("phone" in editedData) contactFields.phone = editedData.phone;
-    if ("city" in editedData) contactFields.city = editedData.city;
-    if ("state" in editedData) contactFields.state = editedData.state;
-    if ("country" in editedData) contactFields.country = editedData.country;
-    if ("zip_code" in editedData) contactFields.zip_code = editedData.zip_code;
+    if ("email" in sanitizedData) contactFields.email = sanitizedData.email;
+    if ("phone" in sanitizedData) contactFields.phone = sanitizedData.phone;
+    if ("city" in sanitizedData) contactFields.city = sanitizedData.city;
+    if ("state" in sanitizedData) contactFields.state = sanitizedData.state;
+    if ("country" in sanitizedData)
+      contactFields.country = sanitizedData.country;
+    if ("zip_code" in sanitizedData)
+      contactFields.zip_code = sanitizedData.zip_code;
 
     if (Object.keys(contactFields).length > 0) {
       updateData.contact = contactFields;
     }
 
+    // Immediate feedback
+    setSaveSnackbar({ open: true, message: "Saving...", severity: "info" });
+    console.log("[WebUsersGrid] mutate update", {
+      id: editingRowId,
+      updateData,
+    });
     updateMutation.mutate({ id: editingRowId, data: updateData });
-  };
+  }, [editingRowId, editedData, updateMutation]);
 
-  const cancelEdit = () => {
+  const cancelEdit = useCallback(() => {
     // Confirm before discarding changes if user has made edits
     if (editingRowId !== null && Object.keys(editedData).length > 0) {
       if (!confirm("Discard unsaved changes?")) {
@@ -1303,11 +633,12 @@ const WebUsersGrid: React.FC = () => {
     setEditingRowId(null);
     setEditedData({});
     setValidationErrors({});
-  };
+  }, [editingRowId, editedData]);
 
-  const handleFieldChange = (field: keyof NormalizedUser, value: any) => {
+  const handleFieldChange = useCallback((field: keyof NormalizedUser, value: any) => {
+    if (!EDITABLE_FIELDS.includes(field as any)) return;
     setEditedData((prev) => ({ ...prev, [field]: value }));
-  };
+  }, []);
 
   const handleEdit = (orig: NormalizedUser) => {
     if (!canEdit) {
@@ -1318,21 +649,21 @@ const WebUsersGrid: React.FC = () => {
   };
 
   // Delete handlers
-  const openDeleteDialog = (orig: NormalizedUser) => {
+  const openDeleteDialog = useCallback((orig: NormalizedUser) => {
     setUserToDelete(orig);
     setDeleteDialogOpen(true);
-  };
+  }, []);
 
-  const closeDeleteDialog = () => {
+  const closeDeleteDialog = useCallback(() => {
     setDeleteDialogOpen(false);
     setUserToDelete(null);
-  };
+  }, []);
 
-  const confirmDelete = () => {
+  const confirmDelete = useCallback(() => {
     if (userToDelete?.id) {
       deleteMutation.mutate(userToDelete.id);
     }
-  };
+  }, [userToDelete, deleteMutation]);
 
   // Memoize columns with only stable dependencies (remove editingRowId and editedData)
   const columns = useMemo<MRT_ColumnDef<NormalizedUser>[]>(
@@ -1369,15 +700,21 @@ const WebUsersGrid: React.FC = () => {
                 tableState?.editingRowId === orig.id;
 
               if (isEditing) {
+                const hasChanges =
+                  !!tableState?.editedData &&
+                  Object.keys(tableState.editedData as object).length > 0;
                 return (
                   <Box
                     sx={{ display: "flex", gap: 0.5, justifyContent: "center" }}
                   >
-                    <Tooltip title="Save changes" arrow>
+                    <Tooltip
+                      title={hasChanges ? "Save changes" : "No changes to save"}
+                      arrow
+                    >
                       <IconButton
                         size="small"
                         onClick={saveEdit}
-                        disabled={isSaving}
+                        disabled={isSaving || !hasChanges}
                         aria-label="Save changes"
                         sx={{
                           padding: "4px",
@@ -1509,7 +846,11 @@ const WebUsersGrid: React.FC = () => {
                     size={DEFAULT_AVATAR_SIZE}
                   />
                   <EditableCell
-                    value={isEditing ? editedData.student_name : name}
+                    value={
+                      isEditing
+                        ? editedData.student_name ?? orig.student_name ?? name
+                        : name
+                    }
                     isEditing={isEditing}
                     onChange={(val) => handleFieldChange("student_name", val)}
                     field="student_name"
@@ -1533,7 +874,11 @@ const WebUsersGrid: React.FC = () => {
               const editedData = tableState?.editedData || {};
               return (
                 <EditableCell
-                  value={isEditing ? editedData.father_name : orig.father_name}
+                  value={
+                    isEditing
+                      ? editedData.father_name ?? orig.father_name ?? ""
+                      : orig.father_name
+                  }
                   isEditing={isEditing}
                   onChange={(val) => handleFieldChange("father_name", val)}
                   field="father_name"
@@ -1555,7 +900,11 @@ const WebUsersGrid: React.FC = () => {
               const editedData = tableState?.editedData || {};
               return (
                 <EditableCell
-                  value={isEditing ? editedData.gender : orig.gender}
+                  value={
+                    isEditing
+                      ? editedData.gender ?? orig.gender ?? ""
+                      : orig.gender
+                  }
                   isEditing={isEditing}
                   onChange={(val) => handleFieldChange("gender", val)}
                   field="gender"
@@ -1585,7 +934,7 @@ const WebUsersGrid: React.FC = () => {
               const phone = orig.phone || "";
               return (
                 <EditableCell
-                  value={isEditing ? editedData.phone : phone}
+                  value={isEditing ? editedData.phone ?? phone : phone}
                   isEditing={isEditing}
                   onChange={(val) => handleFieldChange("phone", val)}
                   field="phone"
@@ -1608,7 +957,7 @@ const WebUsersGrid: React.FC = () => {
               const email = orig.email || "";
               return (
                 <EditableCell
-                  value={isEditing ? editedData.email : email}
+                  value={isEditing ? editedData.email ?? email : email}
                   isEditing={isEditing}
                   onChange={(val) => handleFieldChange("email", val)}
                   field="email"
@@ -1631,7 +980,7 @@ const WebUsersGrid: React.FC = () => {
               const city = orig.city || "";
               return (
                 <EditableCell
-                  value={isEditing ? editedData.city : city}
+                  value={isEditing ? editedData.city ?? city : city}
                   isEditing={isEditing}
                   onChange={(val) => handleFieldChange("city", val)}
                   field="city"
@@ -1654,7 +1003,7 @@ const WebUsersGrid: React.FC = () => {
               const state = orig.state || "";
               return (
                 <EditableCell
-                  value={isEditing ? editedData.state : state}
+                  value={isEditing ? editedData.state ?? state : state}
                   isEditing={isEditing}
                   onChange={(val) => handleFieldChange("state", val)}
                   field="state"
@@ -2010,7 +1359,7 @@ const WebUsersGrid: React.FC = () => {
         ],
       },
     ],
-    [canEdit] // Only depend on stable value
+    [canEdit, saveEdit, cancelEdit, handleFieldChange, validationErrors, handleOpen, startEdit, openDeleteDialog] // Include all functions and state used in columns
   );
 
   return (
@@ -2188,8 +1537,9 @@ const WebUsersGrid: React.FC = () => {
               isLoading: isLoading && rows.length === 0,
               showProgressBars: isRefetching,
               pagination,
-              // Custom state for tracking editing
-              ...(editingRowId !== null && { editingRowId, editedData }),
+              // Custom state for tracking editing (always include)
+              editingRowId,
+              editedData,
             } as any
           }
           manualPagination

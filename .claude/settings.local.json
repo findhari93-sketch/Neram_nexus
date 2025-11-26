@@ -8,7 +8,9 @@
       "Bash(nul)",
       "Bash(git commit:*)",
       "Bash(git push)",
-      "Bash(del nul 2)"
+      "Bash(del nul 2)",
+      "Bash(npx tsc:*)",
+      "Bash(wc:*)"
     ],
     "deny": [],
     "ask": []
