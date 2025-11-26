@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase, UsersDuplicateRow } from "@/lib/supabaseClient";
 import {
   Box,
@@ -102,8 +102,39 @@ const AvatarWithFallback: React.FC<{
   name?: string | null;
   size?: number;
   onClick?: () => void;
-}> = ({ src, name, size = 120, onClick }) => {
+  avatarPath?: string | null;
+}> = ({ src, name, size = 120, onClick, avatarPath }) => {
   const [imgFailed, setImgFailed] = useState(false);
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+
+  // Fetch signed URL for private bucket if avatarPath exists
+  useEffect(() => {
+    const fetchSignedUrl = async () => {
+      if (!avatarPath || src) return; // Skip if we already have a public URL
+
+      try {
+        let cleanPath = avatarPath.trim();
+        // Remove "avatars/" prefix if present
+        if (cleanPath.startsWith("avatars/")) {
+          cleanPath = cleanPath.substring("avatars/".length);
+        }
+
+        const { data, error } = await supabase.storage
+          .from('avatars')
+          .createSignedUrl(cleanPath, 3600); // 1 hour expiry
+
+        if (error) throw error;
+
+        if (data?.signedUrl) {
+          setSignedUrl(data.signedUrl);
+        }
+      } catch (error) {
+        console.error('Failed to fetch signed URL:', error);
+      }
+    };
+
+    fetchSignedUrl();
+  }, [avatarPath, src]);
 
   const initials = name
     ? name
@@ -115,7 +146,8 @@ const AvatarWithFallback: React.FC<{
         .toUpperCase()
     : undefined;
 
-  let finalSrc = src ?? undefined;
+  // Priority: signedUrl (from private bucket) > src (public URL like Google) > undefined
+  let finalSrc = signedUrl || src || undefined;
   if (
     finalSrc &&
     typeof finalSrc === "string" &&
@@ -314,6 +346,120 @@ const InfoCard: React.FC<{
   );
 };
 
+// Helper to resolve photo URL from multiple possible locations
+function resolvePhotoFromRow(orig: any): string | undefined {
+  if (!orig) return undefined;
+
+  // Helper to get Supabase Storage URL from avatar_path
+  const getSupabaseStorageUrl = (avatarPath: string | null | undefined): string | undefined => {
+    if (!avatarPath || typeof avatarPath !== "string") return undefined;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseAnonKey) return undefined;
+
+    let cleanPath = avatarPath.trim();
+
+    // Extract just the file path (remove "avatars/" prefix if present)
+    if (cleanPath.startsWith("avatars/")) {
+      cleanPath = cleanPath.substring("avatars/".length);
+    }
+
+    // For private buckets, construct authenticated URL with token
+    // Format: {supabaseUrl}/storage/v1/object/authenticated/avatars/{path}?token={anonKey}
+    return `${supabaseUrl}/storage/v1/object/authenticated/avatars/${cleanPath}?token=${supabaseAnonKey}`;
+  };
+
+  // Parse account JSONB if it exists
+  let account = orig.account;
+  if (typeof account === "string") {
+    try {
+      account = JSON.parse(account);
+    } catch {
+      account = undefined;
+    }
+  }
+
+  // PRIORITY 1: Check account.avatar_path and construct Supabase Storage URL
+  if (account && typeof account === "object") {
+    const avatarPath = account.avatar_path;
+    if (avatarPath) {
+      const storageUrl = getSupabaseStorageUrl(avatarPath);
+      if (storageUrl) return storageUrl;
+    }
+  }
+
+  // PRIORITY 2: Check account.photo_url or other direct URL fields
+  const candidates = [
+    "photo_url",
+    "photoUrl",
+    "avatar",
+    "image",
+    "profile_image",
+    "profilePhoto",
+  ];
+
+  const getFrom = (obj: any) => {
+    if (!obj || typeof obj !== "object") return undefined;
+    for (const k of candidates) {
+      if (Object.prototype.hasOwnProperty.call(obj, k)) {
+        const v = obj[k];
+        if (typeof v === "string" && v.trim()) return v.trim();
+      }
+    }
+    return undefined;
+  };
+
+  // Check account object for photo URLs
+  if (account) {
+    const found = getFrom(account);
+    if (found) return found;
+  }
+
+  // 3) direct keys on the row
+  const direct = getFrom(orig);
+  if (direct) return direct;
+
+  // 4) common account/basic containers (may be object or JSON string)
+  const containerKeys = [
+    "account_details",
+    "account_info",
+    "basic",
+    "basic_info",
+    "auth",
+    "provider_info",
+  ];
+
+  for (const key of containerKeys) {
+    let container = orig[key];
+    if (!container) continue;
+    if (typeof container === "string") {
+      try {
+        container = JSON.parse(container);
+      } catch {
+        container = undefined;
+      }
+    }
+    const found = getFrom(container);
+    if (found) return found;
+  }
+
+  // 5) last-resort: check any top-level string fields that look like JSON
+  for (const k of Object.keys(orig)) {
+    const v = orig[k];
+    if (typeof v === "string" && v.trim().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(v);
+        const found = getFrom(parsed);
+        if (found) return found;
+      } catch {
+        // ignore parse failures
+      }
+    }
+  }
+
+  return undefined;
+}
+
 // Normalization helper (simplified from WebUsersGrid)
 function normalizeUser(raw: RawRow): NormalizedUser {
   const out: any = { ...raw };
@@ -324,7 +470,7 @@ function normalizeUser(raw: RawRow): NormalizedUser {
     typeof raw.account === "string"
       ? JSON.parse(raw.account || "{}")
       : raw.account || {};
-  out.photo_url = account.photo_url || account.photoUrl || account.avatar;
+  out.photo_url = resolvePhotoFromRow(raw);
   out.firebase_uid = account.firebase_uid || account.uid;
   out.account_type = account.account_type || account.type;
   out.providers = account.providers || account.provider;
@@ -415,6 +561,7 @@ export default function UserDetailsPage() {
   const params = useParams();
   const router = useRouter();
   const userId = params.id as string;
+  const queryClient = useQueryClient();
 
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
 
@@ -517,6 +664,21 @@ export default function UserDetailsPage() {
     ? [user.providers]
     : [];
 
+  // Extract avatar_path from raw data (before normalization)
+  let avatarPath: string | null = null;
+  try {
+    // Get the raw query data to access account JSONB
+    const rawData = queryClient.getQueryData(["user", userId]) as any;
+    if (rawData) {
+      const account = typeof rawData.account === 'string'
+        ? JSON.parse(rawData.account)
+        : rawData.account;
+      avatarPath = account?.avatar_path || null;
+    }
+  } catch (e) {
+    // Ignore parse errors
+  }
+
   return (
     <ThemeProvider theme={mrtTheme}>
       <CssBaseline />
@@ -549,6 +711,7 @@ export default function UserDetailsPage() {
               <Box sx={{ display: "flex", justifyContent: "center", mb: 3 }}>
                 <AvatarWithFallback
                   src={user.photo_url}
+                  avatarPath={avatarPath}
                   name={userName}
                   size={120}
                   onClick={() => setAvatarDialogOpen(true)}

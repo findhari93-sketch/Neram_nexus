@@ -2,6 +2,7 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { MaterialReactTable, type MRT_ColumnDef } from "material-react-table";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { logger } from "@/lib/utils/logger";
 import { useRouter } from "next/navigation";
 import { supabase, UsersDuplicateRow } from "@/lib/supabaseClient";
 import {
@@ -31,6 +32,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import EditIcon from "@mui/icons-material/Edit";
 import CheckIcon from "@mui/icons-material/Check";
+import DeleteIcon from "@mui/icons-material/Delete";
 import { z } from "zod";
 import mrtTheme, { mrtTableProps } from "../mrtTheme";
 
@@ -194,7 +196,9 @@ const EducationSchema = z
 
 const ApplicationSchema = z
   .object({
-    application_submitted: z.union([z.boolean(), z.string(), z.null()]).optional(),
+    application_submitted: z
+      .union([z.boolean(), z.string(), z.null()])
+      .optional(),
     submitted: z.union([z.boolean(), z.string(), z.null()]).optional(),
     is_submitted: z.union([z.boolean(), z.string(), z.null()]).optional(),
     app_submitted_date_time: z.string().nullable().optional(),
@@ -247,6 +251,47 @@ const TABLE_CONTAINER_OFFSET_PX = 280; // used in `calc(100vh - ${TABLE_CONTAINE
 function resolvePhotoFromRow(orig: any): string | undefined {
   if (!orig) return undefined;
 
+  // Helper to get Supabase Storage URL from avatar_path
+  const getSupabaseStorageUrl = (
+    avatarPath: string | null | undefined
+  ): string | undefined => {
+    if (!avatarPath || typeof avatarPath !== "string") return undefined;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseAnonKey) return undefined;
+
+    let cleanPath = avatarPath.trim();
+
+    // Extract just the file path (remove "avatars/" prefix if present)
+    if (cleanPath.startsWith("avatars/")) {
+      cleanPath = cleanPath.substring("avatars/".length);
+    }
+
+    // For private buckets, construct authenticated URL with token
+    // Format: {supabaseUrl}/storage/v1/object/authenticated/avatars/{path}?token={anonKey}
+    return `${supabaseUrl}/storage/v1/object/authenticated/avatars/${cleanPath}?token=${supabaseAnonKey}`;
+  };
+
+  // Parse account JSONB if it exists
+  let account = orig.account;
+  if (typeof account === "string") {
+    try {
+      account = JSON.parse(account);
+    } catch {
+      account = undefined;
+    }
+  }
+
+  // PRIORITY 1: Check account.avatar_path and construct Supabase Storage URL
+  if (account && typeof account === "object") {
+    const avatarPath = account.avatar_path;
+    if (avatarPath) {
+      const storageUrl = getSupabaseStorageUrl(avatarPath);
+      if (storageUrl) return storageUrl;
+    }
+  }
+
+  // PRIORITY 2: Check account.photo_url or other direct URL fields
   const candidates = [
     "photo_url",
     "photoUrl",
@@ -267,13 +312,18 @@ function resolvePhotoFromRow(orig: any): string | undefined {
     return undefined;
   };
 
-  // 1) direct keys on the row
+  // Check account object for photo URLs
+  if (account) {
+    const found = getFrom(account);
+    if (found) return found;
+  }
+
+  // 3) direct keys on the row
   const direct = getFrom(orig);
   if (direct) return direct;
 
-  // 2) common account/basic containers (may be object or JSON string)
+  // 4) common account/basic containers (may be object or JSON string)
   const containerKeys = [
-    "account",
     "account_details",
     "account_info",
     "basic",
@@ -320,6 +370,7 @@ const AvatarWithFallback: React.FC<{
   placeholderVariant?: "gradient" | "color";
   placeholderColors?: string[];
   onClick?: () => void;
+  avatarPath?: string | null;
 }> = React.memo(
   ({
     src,
@@ -328,8 +379,12 @@ const AvatarWithFallback: React.FC<{
     placeholderVariant = "gradient",
     placeholderColors,
     onClick,
+    avatarPath,
   }) => {
     const [imgFailed, setImgFailed] = useState(false);
+    const [signedUrl, setSignedUrl] = useState<string | null>(null);
+    const [loadingSignedUrl, setLoadingSignedUrl] = useState(false);
+
     // track mounted state so async image callbacks don't set state after unmount
     const mountedRef = useRef(true);
     useEffect(() => {
@@ -338,6 +393,40 @@ const AvatarWithFallback: React.FC<{
         mountedRef.current = false;
       };
     }, []);
+
+    // Fetch signed URL for private bucket if avatarPath exists
+    useEffect(() => {
+      const fetchSignedUrl = async () => {
+        if (!avatarPath || src) return; // Skip if we already have a public URL
+
+        setLoadingSignedUrl(true);
+        try {
+          let cleanPath = avatarPath.trim();
+          // Remove "avatars/" prefix if present
+          if (cleanPath.startsWith("avatars/")) {
+            cleanPath = cleanPath.substring("avatars/".length);
+          }
+
+          const { data, error } = await supabase.storage
+            .from("avatars")
+            .createSignedUrl(cleanPath, 3600); // 1 hour expiry
+
+          if (error) throw error;
+
+          if (mountedRef.current && data?.signedUrl) {
+            setSignedUrl(data.signedUrl);
+          }
+        } catch (error) {
+          logger.error("Failed to fetch signed URL", error);
+        } finally {
+          if (mountedRef.current) {
+            setLoadingSignedUrl(false);
+          }
+        }
+      };
+
+      fetchSignedUrl();
+    }, [avatarPath, src]);
 
     const initials = name
       ? name
@@ -349,7 +438,8 @@ const AvatarWithFallback: React.FC<{
           .toUpperCase()
       : undefined;
 
-    let finalSrc = src ?? undefined;
+    // Priority: signedUrl (from private bucket) > src (public URL like Google) > undefined
+    let finalSrc = signedUrl || src || undefined;
     if (
       finalSrc &&
       typeof finalSrc === "string" &&
@@ -639,8 +729,7 @@ function normalizeAccount(orig: RawRow, out: any) {
     if (val !== undefined && val !== null) {
       const parsed = parseMaybeJson(val, AccountSchema);
       if (parsed === undefined && process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.warn("Account data failed validation", { key, value: val });
+        logger.warn("Account data failed validation", { key, value: val });
       }
       account = account ?? parsed;
     }
@@ -680,8 +769,7 @@ function normalizeBasic(orig: RawRow, out: any) {
     if (val !== undefined && val !== null) {
       const parsed = parseMaybeJson(val, BasicSchema);
       if (parsed === undefined && process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.warn("Basic data failed validation", { key, value: val });
+        logger.warn("Basic data failed validation", { key, value: val });
       }
       basic = basic ?? parsed;
     }
@@ -722,8 +810,7 @@ function normalizeContact(orig: RawRow, out: any) {
     if (val !== undefined && val !== null) {
       const parsed = parseMaybeJson(val, ContactSchema);
       if (parsed === undefined && process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.warn("Contact data failed validation", { key, value: val });
+        logger.warn("Contact data failed validation", { key, value: val });
       }
       contact = contact ?? parsed ?? val;
     }
@@ -744,8 +831,7 @@ function normalizeEducation(orig: RawRow, out: any) {
     if (val !== undefined && val !== null) {
       const parsed = parseMaybeJson(val, EducationSchema);
       if (parsed === undefined && process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.warn("Education data failed validation", { key, value: val });
+        logger.warn("Education data failed validation", { key, value: val });
       }
       edu = edu ?? parsed;
     }
@@ -782,8 +868,7 @@ function normalizeApplication(orig: RawRow, out: any) {
     if (val !== undefined && val !== null) {
       const parsed = parseMaybeJson(val, ApplicationSchema);
       if (parsed === undefined && process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.warn("Application data failed validation", { key, value: val });
+        logger.warn("Application data failed validation", { key, value: val });
       }
       app = app ?? parsed;
     }
@@ -836,8 +921,7 @@ function normalizeAdminFilled(orig: RawRow, out: any) {
     if (val !== undefined && val !== null) {
       const parsed = parseMaybeJson(val, AdminFilledSchema);
       if (parsed === undefined && process.env.NODE_ENV === "development") {
-        // eslint-disable-next-line no-console
-        console.warn("AdminFilled data failed validation", { key, value: val });
+        logger.warn("AdminFilled data failed validation", { key, value: val });
       }
       adm = adm ?? parsed;
     }
@@ -889,8 +973,7 @@ function normalizeProviders(out: any) {
     if (parsed !== undefined) {
       out.providers = Array.isArray(parsed) ? parsed : parsed;
     } else if (process.env.NODE_ENV === "development") {
-      // eslint-disable-next-line no-console
-      console.warn("Providers string failed to parse as JSON", {
+      logger.warn("Providers string failed to parse as JSON", {
         providers: p,
       });
     }
@@ -982,8 +1065,7 @@ const ClassRequestsGrid: React.FC = () => {
         } else {
           validationErrors++;
           if (process.env.NODE_ENV === "development") {
-            // eslint-disable-next-line no-console
-            console.warn("Row failed schema validation (kept anyway)", {
+            logger.validationError(validationErrors, {
               row: nr,
               issues: res.error.issues,
             });
@@ -1030,7 +1112,9 @@ const ClassRequestsGrid: React.FC = () => {
   >();
 
   // Edit mode state: track which row is being edited and the edited values
-  const [editingRowId, setEditingRowId] = useState<string | number | null>(null);
+  const [editingRowId, setEditingRowId] = useState<string | number | null>(
+    null
+  );
   const [editedData, setEditedData] = useState<Partial<NormalizedClassRequest>>(
     {}
   );
@@ -1041,6 +1125,11 @@ const ClassRequestsGrid: React.FC = () => {
     message: string;
     severity: "success" | "error";
   }>({ open: false, message: "", severity: "success" });
+
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [requestToDelete, setRequestToDelete] =
+    useState<NormalizedClassRequest | null>(null);
 
   const openAvatar = (orig: NormalizedClassRequest, name?: string) => {
     const src =
@@ -1116,12 +1205,54 @@ const ClassRequestsGrid: React.FC = () => {
       setEditedData({});
     },
     onError: (error: any) => {
-      console.error("Update failed:", error);
+      logger.error("Update failed", error);
       setSaveSnackbar({
         open: true,
         message: `Failed to update user: ${error.message || "Unknown error"}`,
         severity: "error",
       });
+    },
+  });
+
+  // Mutation to delete request from Supabase
+  const deleteRequestMutation = useMutation({
+    mutationFn: async (id: string | number) => {
+      const { error } = await supabase
+        .from("users_duplicate")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+      return { id };
+    },
+    onSuccess: () => {
+      // Invalidate and refetch the request list
+      queryClient.invalidateQueries({
+        queryKey: [
+          "submitted_applications",
+          pagination.pageIndex,
+          pagination.pageSize,
+        ],
+      });
+      setSaveSnackbar({
+        open: true,
+        message: "Request deleted successfully!",
+        severity: "success",
+      });
+      setDeleteDialogOpen(false);
+      setRequestToDelete(null);
+    },
+    onError: (error: any) => {
+      logger.error("Delete failed", error);
+      setSaveSnackbar({
+        open: true,
+        message: `Failed to delete request: ${
+          error.message || "Unknown error"
+        }`,
+        severity: "error",
+      });
+      setDeleteDialogOpen(false);
+      setRequestToDelete(null);
     },
   });
 
@@ -1193,6 +1324,23 @@ const ClassRequestsGrid: React.FC = () => {
       return;
     }
     startEdit(orig);
+  };
+
+  // Delete handlers
+  const openDeleteDialog = (orig: NormalizedClassRequest) => {
+    setRequestToDelete(orig);
+    setDeleteDialogOpen(true);
+  };
+
+  const closeDeleteDialog = () => {
+    setDeleteDialogOpen(false);
+    setRequestToDelete(null);
+  };
+
+  const confirmDelete = () => {
+    if (requestToDelete?.id) {
+      deleteRequestMutation.mutate(requestToDelete.id);
+    }
   };
 
   const columns = useMemo<MRT_ColumnDef<NormalizedClassRequest>[]>(
@@ -1277,7 +1425,7 @@ const ClassRequestsGrid: React.FC = () => {
                     <IconButton
                       className="mrt-action-btns"
                       size="small"
-                      aria-label="Open"
+                      aria-label="Open request details"
                       onClick={() => handleOpen(orig)}
                       sx={{
                         padding: "4px",
@@ -1289,21 +1437,38 @@ const ClassRequestsGrid: React.FC = () => {
                     </IconButton>
                   </Tooltip>
                   {canEdit && (
-                    <Tooltip title="Edit user" arrow>
-                      <IconButton
-                        className="mrt-action-btns"
-                        size="small"
-                        aria-label="Edit"
-                        onClick={() => startEdit(orig)}
-                        sx={{
-                          padding: "4px",
-                          color: "secondary.main",
-                          "&:hover": { backgroundColor: "action.hover" },
-                        }}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+                    <>
+                      <Tooltip title="Edit user" arrow>
+                        <IconButton
+                          className="mrt-action-btns"
+                          size="small"
+                          aria-label="Edit request"
+                          onClick={() => startEdit(orig)}
+                          sx={{
+                            padding: "4px",
+                            color: "secondary.main",
+                            "&:hover": { backgroundColor: "action.hover" },
+                          }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Delete request" arrow>
+                        <IconButton
+                          className="mrt-action-btns"
+                          size="small"
+                          aria-label="Delete request"
+                          onClick={() => openDeleteDialog(orig)}
+                          sx={{
+                            padding: "4px",
+                            color: "error.main",
+                            "&:hover": { backgroundColor: "action.hover" },
+                          }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </>
                   )}
                 </Box>
               );
@@ -1329,10 +1494,24 @@ const ClassRequestsGrid: React.FC = () => {
                 orig.display_name ??
                 orig.name ??
                 `User #${orig.id ?? "Unknown"}`;
+
+              // Extract avatar_path from account JSONB
+              let avatarPath: string | null = null;
+              try {
+                const account =
+                  typeof orig.account === "string"
+                    ? JSON.parse(orig.account)
+                    : orig.account;
+                avatarPath = account?.avatar_path || null;
+              } catch (e) {
+                // Ignore parse errors
+              }
+
               return (
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                   <AvatarWithFallback
                     src={orig.photo_url}
+                    avatarPath={avatarPath}
                     name={name}
                     onClick={() => {
                       // open avatar dialog (implemented below)
@@ -1967,6 +2146,7 @@ const ClassRequestsGrid: React.FC = () => {
             showGlobalFilter: true,
             showColumnFilters: true,
             columnPinning: { left: ["actions"] },
+            sorting: [{ id: "created_at", desc: true }],
           }}
           muiTableContainerProps={{
             sx: { maxHeight: `calc(100vh - ${TABLE_CONTAINER_OFFSET_PX}px)` },
@@ -2021,6 +2201,78 @@ const ClassRequestsGrid: React.FC = () => {
               <Typography>No image available</Typography>
             )}
           </DialogContent>
+        </Dialog>
+
+        {/* Delete confirmation dialog */}
+        <Dialog
+          open={deleteDialogOpen}
+          onClose={closeDeleteDialog}
+          maxWidth="xs"
+          fullWidth
+          aria-labelledby="delete-dialog-title"
+        >
+          <DialogTitle
+            id="delete-dialog-title"
+            sx={{ display: "flex", alignItems: "center", gap: 1 }}
+          >
+            <DeleteIcon sx={{ color: "error.main" }} />
+            <Box sx={{ flex: 1 }}>Confirm Delete</Box>
+            <IconButton
+              aria-label="close"
+              onClick={closeDeleteDialog}
+              size="small"
+              disabled={deleteRequestMutation.isPending}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </DialogTitle>
+          <DialogContent dividers>
+            <Typography variant="body1" gutterBottom>
+              Are you sure you want to delete the request for{" "}
+              <strong>
+                {requestToDelete?.student_name ??
+                  requestToDelete?.display_name ??
+                  requestToDelete?.name ??
+                  `User #${requestToDelete?.id ?? "Unknown"}`}
+              </strong>
+              ?
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+              This action cannot be undone. The request data will be permanently
+              removed from the database.
+            </Typography>
+          </DialogContent>
+          <Box
+            sx={{
+              display: "flex",
+              gap: 2,
+              justifyContent: "flex-end",
+              p: 2,
+            }}
+          >
+            <Button
+              variant="outlined"
+              onClick={closeDeleteDialog}
+              disabled={deleteRequestMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={confirmDelete}
+              disabled={deleteRequestMutation.isPending}
+              startIcon={
+                deleteRequestMutation.isPending ? (
+                  <CircularProgress size={16} />
+                ) : (
+                  <DeleteIcon />
+                )
+              }
+            >
+              {deleteRequestMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </Box>
         </Dialog>
       </ThemeProvider>
     </Box>

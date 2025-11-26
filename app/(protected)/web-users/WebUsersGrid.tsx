@@ -1,9 +1,26 @@
 "use client";
-import React, { useMemo, useState, useEffect, useRef } from "react";
-import { MaterialReactTable, type MRT_ColumnDef } from "material-react-table";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import React, {
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
+import {
+  MaterialReactTable,
+  type MRT_ColumnDef,
+  type MRT_TableState,
+} from "material-react-table";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { supabase, UsersDuplicateRow } from "@/lib/supabaseClient";
+import { fetchUsers } from "@/lib/api/users";
+import { useUserMutations } from "@/hooks/useUserMutations";
+import { useCanEdit } from "@/hooks/useUserRole";
+import {
+  resolvePhotoFromRow,
+  clearPhotoCache,
+} from "@/lib/utils/photoResolver";
 import {
   Box,
   Button,
@@ -22,6 +39,7 @@ import {
   InputAdornment,
   Tooltip,
   CircularProgress,
+  Skeleton,
 } from "@mui/material";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -32,8 +50,15 @@ import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import EditIcon from "@mui/icons-material/Edit";
 import CheckIcon from "@mui/icons-material/Check";
+import DeleteIcon from "@mui/icons-material/Delete";
 import { z } from "zod";
 import mrtTheme, { mrtTableProps } from "../mrtTheme";
+
+// Extended table state interface for type safety
+interface ExtendedTableState extends MRT_TableState<NormalizedUser> {
+  editingRowId?: string | number | null;
+  editedData?: Partial<NormalizedUser>;
+}
 
 // Default props used for per-column filter text fields to avoid repetition
 const defaultFilterProps = ({ column }: any) => {
@@ -51,7 +76,7 @@ const defaultFilterProps = ({ column }: any) => {
             onClick={() => column.setFilterValue(undefined)}
             aria-label="Clear filter"
           >
-            ×
+            <ClearIcon fontSize="small" />
           </IconButton>
         </InputAdornment>
       ) : undefined,
@@ -195,7 +220,9 @@ const EducationSchema = z
 
 const ApplicationSchema = z
   .object({
-    application_submitted: z.union([z.boolean(), z.string(), z.null()]).optional(),
+    application_submitted: z
+      .union([z.boolean(), z.string(), z.null()])
+      .optional(),
     submitted: z.union([z.boolean(), z.string(), z.null()]).optional(),
     is_submitted: z.union([z.boolean(), z.string(), z.null()]).optional(),
     app_submitted_date_time: z.string().nullable().optional(),
@@ -221,6 +248,30 @@ const AdminFilledSchema = z
 
 const ProvidersSchema = z.any();
 
+// Edit data validation schema for inline editing
+const EditDataSchema = z.object({
+  student_name: z
+    .string()
+    .min(1, "Name is required")
+    .max(100)
+    .optional()
+    .or(z.literal("")),
+  father_name: z.string().min(1).max(100).optional().or(z.literal("")),
+  email: z.string().email("Invalid email address").optional().or(z.literal("")),
+  phone: z
+    .string()
+    .regex(/^[0-9+\-\s()]+$/, "Invalid phone number")
+    .min(10, "Phone number too short")
+    .max(20, "Phone number too long")
+    .optional()
+    .or(z.literal("")),
+  city: z.string().max(100).optional().or(z.literal("")),
+  state: z.string().max(100).optional().or(z.literal("")),
+  country: z.string().max(100).optional().or(z.literal("")),
+  zip_code: z.string().max(20).optional().or(z.literal("")),
+  gender: z.enum(["Male", "Female", "Other", ""]).optional(),
+});
+
 // Zod schema for the normalized user shape. We allow rows without names
 // and will provide a fallback (User #ID) in the UI when rendering.
 const NormalizedUserSchema = z
@@ -243,214 +294,196 @@ const DEFAULT_AVATAR_SIZE = 24;
 const DEFAULT_PAGE_SIZE = 50;
 const TABLE_CONTAINER_OFFSET_PX = 280; // used in `calc(100vh - ${TABLE_CONTAINER_OFFSET_PX}px)`
 
-// AvatarWithFallback: resolves image URL from multiple row locations (top-level, account containers,
-// JSON strings) and falls back to initials if image fails to load or is unavailable.
-function resolvePhotoFromRow(orig: any): string | undefined {
-  if (!orig) return undefined;
-
-  const candidates = [
-    "photo_url",
-    "photoUrl",
-    "avatar",
-    "image",
-    "profile_image",
-    "profilePhoto",
-  ];
-
-  const getFrom = (obj: any) => {
-    if (!obj || typeof obj !== "object") return undefined;
-    for (const k of candidates) {
-      if (Object.prototype.hasOwnProperty.call(obj, k)) {
-        const v = obj[k];
-        if (typeof v === "string" && v.trim()) return v.trim();
-      }
-    }
-    return undefined;
-  };
-
-  // 1) direct keys on the row
-  const direct = getFrom(orig);
-  if (direct) return direct;
-
-  // 2) common account/basic containers (may be object or JSON string)
-  const containerKeys = [
-    "account",
-    "account_details",
-    "account_info",
-    "basic",
-    "basic_info",
-    "auth",
-    "provider_info",
-  ];
-
-  for (const key of containerKeys) {
-    let container = orig[key];
-    if (!container) continue;
-    if (typeof container === "string") {
-      try {
-        container = JSON.parse(container);
-      } catch {
-        container = undefined;
-      }
-    }
-    const found = getFrom(container);
-    if (found) return found;
-  }
-
-  // 3) last-resort: check any top-level string fields that look like JSON
-  for (const k of Object.keys(orig)) {
-    const v = orig[k];
-    if (typeof v === "string" && v.trim().startsWith("{")) {
-      try {
-        const parsed = JSON.parse(v);
-        const found = getFrom(parsed);
-        if (found) return found;
-      } catch {
-        // ignore parse failures
-      }
-    }
-  }
-
-  return undefined;
-}
-
+// AvatarWithFallback: consistent solid color avatars with photo loading state and timeout.
 const AvatarWithFallback: React.FC<{
   src?: string | null;
   name?: string | null;
+  userId?: string | number;
   size?: number;
-  placeholderVariant?: "gradient" | "color";
-  placeholderColors?: string[];
   onClick?: () => void;
 }> = React.memo(
-  ({
-    src,
-    name,
-    size = DEFAULT_AVATAR_SIZE,
-    placeholderVariant = "gradient",
-    placeholderColors,
-    onClick,
-  }) => {
-    const [imgFailed, setImgFailed] = useState(false);
-    // track mounted state so async image callbacks don't set state after unmount
+  ({ src, name, userId, size = DEFAULT_AVATAR_SIZE, onClick }) => {
+    // Three-state machine: 'loading' | 'loaded' | 'error'
+    const [imgStatus, setImgStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+
+    // track mounted state so async callbacks don't set state after unmount
     const mountedRef = useRef(true);
+    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
     useEffect(() => {
       mountedRef.current = true;
       return () => {
         mountedRef.current = false;
+        // Clear timeout on unmount
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
       };
     }, []);
 
-    const initials = name
-      ? name
-          .split(" ")
-          .filter(Boolean)
-          .map((s: string) => s[0])
-          .slice(0, 2)
-          .join("")
-          .toUpperCase()
-      : undefined;
+    // Normalize and validate image URL
+    const finalSrc = useMemo(() => {
+      if (!src || typeof src !== "string") return null;
 
-    let finalSrc = src ?? undefined;
-    if (
-      finalSrc &&
-      typeof finalSrc === "string" &&
-      finalSrc.startsWith("http://") &&
-      typeof window !== "undefined"
-    ) {
-      finalSrc = finalSrc.replace(/^http:\/\//i, "https://");
-    }
+      const trimmed = src.trim();
+      if (!trimmed) return null;
 
-    // deterministic palette selection based on name
-    const palette =
-      placeholderColors && placeholderColors.length > 0
-        ? placeholderColors
-        : [
-            "#60a5fa",
-            "#f472b6",
-            "#f97316",
-            "#34d399",
-            "#a78bfa",
-            "#06b6d4",
-            "#fb7185",
-            "#f59e0b",
-          ];
-
-    const hashString = (str?: string | null) => {
-      if (!str) return 0;
-      let h = 0;
-      for (let i = 0; i < str.length; i++) {
-        h = (h << 5) - h + str.charCodeAt(i);
-        h |= 0;
+      if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+        return null;
       }
-      return Math.abs(h);
-    };
 
-    const idx = hashString(name) % palette.length;
-    const color1 = palette[idx];
-    const color2 =
-      palette[(idx + Math.floor(palette.length / 2)) % palette.length];
+      return trimmed.replace(/^http:\/\//i, "https://");
+    }, [src]);
 
-    // color utilities
-    const hexToRgb = (hex: string) => {
-      const h = hex.replace("#", "");
-      const bigint = parseInt(
-        h.length === 3
-          ? h
-              .split("")
-              .map((c) => c + c)
-              .join("")
-          : h,
-        16
-      );
-      return {
-        r: (bigint >> 16) & 255,
-        g: (bigint >> 8) & 255,
-        b: bigint & 255,
-      };
-    };
+    // Reset state when src changes and start timeout
+    useEffect(() => {
+      // Clear any existing timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
 
-    const luminance = (hex: string) => {
-      const { r, g, b } = hexToRgb(hex);
-      const srgb = [r, g, b].map((v) => {
-        const s = v / 255;
-        return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-      });
-      return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
-    };
+      if (!finalSrc) {
+        setImgStatus('error');
+        return;
+      }
 
-    const avgL = (luminance(color1) + luminance(color2)) / 2;
-    const textColor = avgL > 0.5 ? "#000000" : "#ffffff";
+      setImgStatus('loading');
 
-    const placeholderSx: any =
-      placeholderVariant === "gradient"
-        ? {
-            backgroundImage: `linear-gradient(135deg, ${color1} 0%, ${color2} 100%)`,
+      // Preload image with CORS handling
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+
+      const handleLoad = () => {
+        if (mountedRef.current) {
+          setImgStatus('loaded');
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
           }
-        : { bgcolor: color1 };
+          console.log('✅ Image loaded:', name);
+        }
+      };
+
+      const handleError = () => {
+        if (mountedRef.current) {
+          setImgStatus('error');
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+          }
+          console.log('❌ Image error:', name, finalSrc);
+        }
+      };
+
+      img.addEventListener('load', handleLoad);
+      img.addEventListener('error', handleError);
+
+      // Set 5-second timeout
+      timeoutRef.current = setTimeout(() => {
+        if (mountedRef.current && imgStatus === 'loading') {
+          setImgStatus('error');
+          console.log('⏱️ Image load timeout:', name, finalSrc);
+        }
+        timeoutRef.current = null;
+      }, 5000);
+
+      img.src = finalSrc;
+
+      return () => {
+        img.removeEventListener('load', handleLoad);
+        img.removeEventListener('error', handleError);
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+      };
+    }, [finalSrc, name]);
+
+    // Extract initials from name
+    const initials = useMemo(() => {
+      if (!name) return "?";
+      return name
+        .split(" ")
+        .filter(Boolean)
+        .map((s: string) => s[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase();
+    }, [name]);
+
+    // Consistent Material Design palette for placeholders
+    const colorPalette = useMemo(
+      () => [
+        "#1976d2", // Blue
+        "#388e3c", // Green
+        "#d32f2f", // Red
+        "#7b1fa2", // Purple
+        "#f57c00", // Orange
+        "#0097a7", // Cyan
+        "#c2185b", // Pink
+        "#5d4037", // Brown
+        "#455a64", // Blue Grey
+        "#e64a19", // Deep Orange
+      ],
+      []
+    );
+
+    const backgroundColor = useMemo(() => {
+      const seed = userId ? String(userId) : name || "default";
+      let hash = 0;
+      for (let i = 0; i < seed.length; i++) {
+        hash = (hash << 5) - hash + seed.charCodeAt(i);
+        hash |= 0;
+      }
+      return colorPalette[Math.abs(hash) % colorPalette.length];
+    }, [userId, name, colorPalette]);
+
+    const showImage = imgStatus === 'loaded';
+    const showSpinner = imgStatus === 'loading';
+    const showInitials = imgStatus === 'error' || !finalSrc;
 
     return (
-      <Avatar
-        src={!imgFailed ? finalSrc : undefined}
-        alt={name ?? undefined}
-        onClick={onClick}
-        sx={{
-          width: size,
-          height: size,
-          color: textColor,
-          fontWeight: 600,
-          cursor: "pointer",
-          ...(!finalSrc || imgFailed ? placeholderSx : {}),
-        }}
-        imgProps={{
-          onError: () => {
-            if (mountedRef.current) {
-              setImgFailed(true);
-            }
-          },
-        }}
-      >
-        {!finalSrc || imgFailed ? initials ?? null : null}
-      </Avatar>
+      <Box sx={{ position: "relative", display: "inline-flex" }}>
+        <Avatar
+          src={showImage ? finalSrc ?? undefined : undefined}
+          alt={name || "User"}
+          onClick={onClick}
+          sx={{
+            width: size,
+            height: size,
+            bgcolor: backgroundColor,
+            color: "#ffffff",
+            fontWeight: 600,
+            fontSize: size * 0.4,
+            cursor: onClick ? "pointer" : "default",
+            transition: "all 0.2s ease",
+            "&:hover": onClick
+              ? {
+                  transform: "scale(1.05)",
+                  boxShadow: 2,
+                }
+              : undefined,
+          }}
+        >
+          {showInitials ? initials : null}
+        </Avatar>
+        {showSpinner && (
+          <CircularProgress
+            size={size * 0.5}
+            thickness={4}
+            sx={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              marginTop: `-${size * 0.25}px`,
+              marginLeft: `-${size * 0.25}px`,
+              color: "rgba(255, 255, 255, 0.8)",
+            }}
+          />
+        )}
+      </Box>
     );
   }
 );
@@ -646,7 +679,8 @@ const EditableCell: React.FC<{
   onChange: (value: any) => void;
   field: keyof NormalizedUser;
   placeholder?: string;
-}> = React.memo(({ value, isEditing, onChange, field, placeholder }) => {
+  error?: string;
+}> = React.memo(({ value, isEditing, onChange, field, placeholder, error }) => {
   if (!isEditing) {
     return <span>{value || "—"}</span>;
   }
@@ -659,6 +693,8 @@ const EditableCell: React.FC<{
       size="small"
       fullWidth
       variant="outlined"
+      error={!!error}
+      helperText={error}
       sx={{
         "& .MuiOutlinedInput-root": {
           fontSize: "0.875rem",
@@ -712,7 +748,10 @@ function normalizeAccount(orig: RawRow, out: any) {
         account = account ?? fallbackParsed;
         if (process.env.NODE_ENV === "development" && !fallbackParsed) {
           // eslint-disable-next-line no-console
-          console.warn("Account data failed validation and parsing", { key, value: val });
+          console.warn("Account data failed validation and parsing", {
+            key,
+            value: val,
+          });
         }
       } else {
         account = account ?? parsed;
@@ -734,7 +773,11 @@ function normalizeAccount(orig: RawRow, out: any) {
 
   out.providers = out.providers ?? account.providers ?? account.provider;
   out.created_at = out.created_at ?? account.created_at ?? account.createdAt;
-  out.last_sign_in = out.last_sign_in ?? account.last_sign_in ?? account.lastSignIn ?? account.last_login;
+  out.last_sign_in =
+    out.last_sign_in ??
+    account.last_sign_in ??
+    account.lastSignIn ??
+    account.last_login;
   out.account_type = out.account_type ?? account.account_type ?? account.type;
   out.display_name = out.display_name ?? account.display_name ?? account.name;
   out.firebase_uid = out.firebase_uid ?? account.firebase_uid ?? account.uid;
@@ -988,19 +1031,10 @@ function normalizeProviders(out: any) {
   }
 }
 
-// Hook to get current user's role from auth system
-// TODO: Replace this with actual auth logic from your Supabase auth or session provider
-const useCurrentUserRole = (): string | null => {
-  // For now, returning "admin" for testing
-  // In production, fetch from: supabase.auth.getUser() or your session/context
-  return "admin"; // Change this to fetch real role: "admin" | "super_admin" | "teacher" | "student" | null
-};
-
 const WebUsersGrid: React.FC = () => {
   const queryClient = useQueryClient();
   const router = useRouter();
-  const userRole = useCurrentUserRole();
-  const canEdit = userRole === "admin" || userRole === "super_admin";
+  const canEdit = useCanEdit();
 
   // Pagination state
   const [pagination, setPagination] = useState({
@@ -1008,24 +1042,21 @@ const WebUsersGrid: React.FC = () => {
     pageSize: DEFAULT_PAGE_SIZE,
   });
 
-  // Use React Query to fetch and cache Supabase data with pagination
+  // Use React Query to fetch data from secure API route
   const { data, isLoading, isError, error, isRefetching, refetch } = useQuery({
     queryKey: ["users_duplicate", pagination.pageIndex, pagination.pageSize],
     queryFn: async () => {
-      const start = pagination.pageIndex * pagination.pageSize;
-      const end = start + pagination.pageSize - 1;
+      // Clear photo cache on fresh fetch
+      clearPhotoCache();
 
-      // Fetch paginated data with count
-      const { data, error, count } = await supabase
-        .from("users_duplicate")
-        .select("*", { count: "exact" })
-        .range(start, end)
-        .order("id", { ascending: false }); // Order by ID descending for newest first
-
-      if (error) throw new Error(error.message);
+      // Fetch from API route (server-side authorization)
+      const response = await fetchUsers({
+        pageIndex: pagination.pageIndex,
+        pageSize: pagination.pageSize,
+      });
 
       // Normalize rows: flatten commonly-used nested JSON columns (account/contact)
-      const raw = (data as RawRow[]) ?? [];
+      const raw = (response.rows as RawRow[]) ?? [];
       const normalized: NormalizedUser[] = raw.map((r) => {
         const out: any = { ...r };
         // apply per-container normalizers
@@ -1037,8 +1068,7 @@ const WebUsersGrid: React.FC = () => {
         normalizeAdminFilled(r, out);
         normalizeProviders(out);
 
-        // Resolve and cache photo URL during normalization so render-time
-        // components (like Avatar) don't need to re-run expensive parsing.
+        // Resolve and cache photo URL during normalization
         try {
           const resolved = resolvePhotoFromRow(out);
           if (resolved) {
@@ -1051,8 +1081,7 @@ const WebUsersGrid: React.FC = () => {
         return out as NormalizedUser;
       });
 
-      // Lenient validation: attempt to parse but never skip rows. If parsing
-      // fails, keep the original normalized row and log a dev-only warning.
+      // Lenient validation
       const finalRows: NormalizedUser[] = [];
       let validationErrors = 0;
       for (const nr of normalized) {
@@ -1062,7 +1091,6 @@ const WebUsersGrid: React.FC = () => {
         } else {
           validationErrors++;
           if (process.env.NODE_ENV === "development") {
-            // eslint-disable-next-line no-console
             console.warn("Row failed schema validation (kept anyway)", {
               row: nr,
               issues: res.error.issues,
@@ -1074,11 +1102,11 @@ const WebUsersGrid: React.FC = () => {
 
       return {
         rows: finalRows,
-        rowCount: count ?? finalRows.length,
+        rowCount: response.rowCount,
         validationErrors,
       };
     },
-    placeholderData: (previousData) => previousData, // Keep previous page data while fetching new page (replaces keepPreviousData in v5)
+    placeholderData: (previousData) => previousData,
   });
 
   const rows = data?.rows ?? [];
@@ -1109,7 +1137,9 @@ const WebUsersGrid: React.FC = () => {
   >();
 
   // Edit mode state: track which row is being edited and the edited values
-  const [editingRowId, setEditingRowId] = useState<string | number | null>(null);
+  const [editingRowId, setEditingRowId] = useState<string | number | null>(
+    null
+  );
   const [editedData, setEditedData] = useState<Partial<NormalizedUser>>({});
 
   // Save/error snackbars for edit operations
@@ -1118,6 +1148,18 @@ const WebUsersGrid: React.FC = () => {
     message: string;
     severity: "success" | "error";
   }>({ open: false, message: "", severity: "success" });
+
+  // Validation errors for inline display
+  const [validationErrors, setValidationErrors] = useState<
+    Record<string, string>
+  >({});
+
+  // Track unsaved changes for warning
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<NormalizedUser | null>(null);
 
   const openAvatar = (orig: NormalizedUser, name?: string) => {
     const src =
@@ -1133,70 +1175,43 @@ const WebUsersGrid: React.FC = () => {
     setAvatarDialogName(undefined);
   };
 
-  // Mutation to update user data in Supabase
-  const updateUserMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string | number; data: any }) => {
-      // First, fetch the current row to get existing JSONB data
-      const { data: currentRow, error: fetchError } = await supabase
-        .from("users_duplicate")
-        .select("basic, contact, admin_filled")
-        .eq("id", id)
-        .single();
+  // Track editing state for unsaved changes warning
+  useEffect(() => {
+    setHasUnsavedChanges(editingRowId !== null);
+  }, [editingRowId]);
 
-      if (fetchError) throw fetchError;
-
-      // Merge new data with existing JSONB objects
-      const updatePayload: any = {};
-
-      if (data.basic) {
-        updatePayload.basic = { ...(currentRow?.basic || {}), ...data.basic };
+  // Warn before page unload if there are unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = "";
       }
+    };
 
-      if (data.contact) {
-        updatePayload.contact = {
-          ...(currentRow?.contact || {}),
-          ...data.contact,
-        };
-      }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
-      if (data.admin_filled) {
-        updatePayload.admin_filled = {
-          ...(currentRow?.admin_filled || {}),
-          ...data.admin_filled,
-        };
-      }
-
-      // Update the row with merged data
-      const { error } = await supabase
-        .from("users_duplicate")
-        .update(updatePayload)
-        .eq("id", id);
-
-      if (error) throw error;
-      return { id, data: updatePayload };
-    },
-    onSuccess: () => {
-      // Invalidate and refetch the user list
-      queryClient.invalidateQueries({
-        queryKey: [
-          "users_duplicate",
-          pagination.pageIndex,
-          pagination.pageSize,
-        ],
-      });
+  // Use optimistic mutations hook for instant UI updates
+  const { updateMutation, deleteMutation } = useUserMutations({
+    pageIndex: pagination.pageIndex,
+    pageSize: pagination.pageSize,
+    onSuccess: (message) => {
       setSaveSnackbar({
         open: true,
-        message: "User updated successfully!",
+        message,
         severity: "success",
       });
       setEditingRowId(null);
       setEditedData({});
+      setDeleteDialogOpen(false);
+      setUserToDelete(null);
     },
-    onError: (error: any) => {
-      console.error("Update failed:", error);
+    onError: (message) => {
       setSaveSnackbar({
         open: true,
-        message: `Failed to update user: ${error.message || "Unknown error"}`,
+        message,
         severity: "error",
       });
     },
@@ -1219,6 +1234,31 @@ const WebUsersGrid: React.FC = () => {
 
   const saveEdit = async () => {
     if (editingRowId === null) return;
+
+    // Validate edited data before saving
+    const validation = EditDataSchema.safeParse(editedData);
+
+    if (!validation.success) {
+      // Build field-specific errors for inline display
+      const errors: Record<string, string> = {};
+      validation.error.issues.forEach((issue) => {
+        if (issue.path[0]) {
+          errors[issue.path[0] as string] = issue.message;
+        }
+      });
+      setValidationErrors(errors);
+
+      // Also show snackbar for first error
+      setSaveSnackbar({
+        open: true,
+        message: validation.error.issues[0].message,
+        severity: "error",
+      });
+      return;
+    }
+
+    // Clear validation errors on successful validation
+    setValidationErrors({});
 
     // Map flat fields to JSONB structure based on database schema
     const updateData: any = {};
@@ -1249,12 +1289,20 @@ const WebUsersGrid: React.FC = () => {
       updateData.contact = contactFields;
     }
 
-    updateUserMutation.mutate({ id: editingRowId, data: updateData });
+    updateMutation.mutate({ id: editingRowId, data: updateData });
   };
 
   const cancelEdit = () => {
+    // Confirm before discarding changes if user has made edits
+    if (editingRowId !== null && Object.keys(editedData).length > 0) {
+      if (!confirm("Discard unsaved changes?")) {
+        return;
+      }
+    }
+
     setEditingRowId(null);
     setEditedData({});
+    setValidationErrors({});
   };
 
   const handleFieldChange = (field: keyof NormalizedUser, value: any) => {
@@ -1269,6 +1317,24 @@ const WebUsersGrid: React.FC = () => {
     startEdit(orig);
   };
 
+  // Delete handlers
+  const openDeleteDialog = (orig: NormalizedUser) => {
+    setUserToDelete(orig);
+    setDeleteDialogOpen(true);
+  };
+
+  const closeDeleteDialog = () => {
+    setDeleteDialogOpen(false);
+    setUserToDelete(null);
+  };
+
+  const confirmDelete = () => {
+    if (userToDelete?.id) {
+      deleteMutation.mutate(userToDelete.id);
+    }
+  };
+
+  // Memoize columns with only stable dependencies (remove editingRowId and editedData)
   const columns = useMemo<MRT_ColumnDef<NormalizedUser>[]>(
     () => [
       // Actions column (shows on row hover)
@@ -1294,11 +1360,13 @@ const WebUsersGrid: React.FC = () => {
             },
             enableSorting: false,
             enableColumnFilter: false,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedUser;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
               const isSaving =
-                updateUserMutation.isPending && editingRowId === orig.id;
+                updateMutation.isPending &&
+                tableState?.editingRowId === orig.id;
 
               if (isEditing) {
                 return (
@@ -1363,21 +1431,38 @@ const WebUsersGrid: React.FC = () => {
                     </IconButton>
                   </Tooltip>
                   {canEdit && (
-                    <Tooltip title="Edit user" arrow>
-                      <IconButton
-                        className="mrt-action-btns"
-                        size="small"
-                        aria-label="Edit"
-                        onClick={() => startEdit(orig)}
-                        sx={{
-                          padding: "4px",
-                          color: "secondary.main",
-                          "&:hover": { backgroundColor: "action.hover" },
-                        }}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+                    <>
+                      <Tooltip title="Edit user" arrow>
+                        <IconButton
+                          className="mrt-action-btns"
+                          size="small"
+                          aria-label="Edit"
+                          onClick={() => startEdit(orig)}
+                          sx={{
+                            padding: "4px",
+                            color: "secondary.main",
+                            "&:hover": { backgroundColor: "action.hover" },
+                          }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Delete user" arrow>
+                        <IconButton
+                          className="mrt-action-btns"
+                          size="small"
+                          aria-label="Delete"
+                          onClick={() => openDeleteDialog(orig)}
+                          sx={{
+                            padding: "4px",
+                            color: "error.main",
+                            "&:hover": { backgroundColor: "action.hover" },
+                          }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </>
                   )}
                 </Box>
               );
@@ -1395,19 +1480,28 @@ const WebUsersGrid: React.FC = () => {
             header: "Student Name",
             size: 200,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedUser;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               const name =
                 orig.student_name ??
                 orig.display_name ??
                 orig.name ??
                 `User #${orig.id ?? "Unknown"}`;
+
+              // Resolve photo URL from all possible sources (account.photo_url, account.avatar_path, etc.)
+              const photoUrl =
+                resolvePhotoFromRow(orig) ??
+                (orig.photo_url as string | undefined);
+
               return (
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                   <AvatarWithFallback
-                    src={orig.photo_url}
+                    src={photoUrl}
                     name={name}
+                    userId={orig.id}
                     onClick={() => {
                       // open avatar dialog (implemented below)
                       openAvatar(orig, name as string);
@@ -1420,6 +1514,7 @@ const WebUsersGrid: React.FC = () => {
                     onChange={(val) => handleFieldChange("student_name", val)}
                     field="student_name"
                     placeholder="Student name"
+                    error={validationErrors.student_name}
                   />
                 </Box>
               );
@@ -1431,9 +1526,11 @@ const WebUsersGrid: React.FC = () => {
             header: "Father Name",
             size: 200,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedUser;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               return (
                 <EditableCell
                   value={isEditing ? editedData.father_name : orig.father_name}
@@ -1441,6 +1538,7 @@ const WebUsersGrid: React.FC = () => {
                   onChange={(val) => handleFieldChange("father_name", val)}
                   field="father_name"
                   placeholder="Father name"
+                  error={validationErrors.father_name}
                 />
               );
             },
@@ -1450,9 +1548,11 @@ const WebUsersGrid: React.FC = () => {
             header: "Gender",
             size: 150,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedUser;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               return (
                 <EditableCell
                   value={isEditing ? editedData.gender : orig.gender}
@@ -1460,6 +1560,7 @@ const WebUsersGrid: React.FC = () => {
                   onChange={(val) => handleFieldChange("gender", val)}
                   field="gender"
                   placeholder="Gender"
+                  error={validationErrors.gender}
                 />
               );
             },
@@ -1476,9 +1577,11 @@ const WebUsersGrid: React.FC = () => {
             header: "Phone 1",
             size: 150,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedUser;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               const phone = orig.phone || "";
               return (
                 <EditableCell
@@ -1487,6 +1590,7 @@ const WebUsersGrid: React.FC = () => {
                   onChange={(val) => handleFieldChange("phone", val)}
                   field="phone"
                   placeholder="Phone"
+                  error={validationErrors.phone}
                 />
               );
             },
@@ -1496,9 +1600,11 @@ const WebUsersGrid: React.FC = () => {
             header: "Email",
             size: 240,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedUser;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               const email = orig.email || "";
               return (
                 <EditableCell
@@ -1507,6 +1613,7 @@ const WebUsersGrid: React.FC = () => {
                   onChange={(val) => handleFieldChange("email", val)}
                   field="email"
                   placeholder="Email"
+                  error={validationErrors.email}
                 />
               );
             },
@@ -1516,9 +1623,11 @@ const WebUsersGrid: React.FC = () => {
             header: "City",
             size: 140,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedUser;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               const city = orig.city || "";
               return (
                 <EditableCell
@@ -1527,6 +1636,7 @@ const WebUsersGrid: React.FC = () => {
                   onChange={(val) => handleFieldChange("city", val)}
                   field="city"
                   placeholder="City"
+                  error={validationErrors.city}
                 />
               );
             },
@@ -1536,9 +1646,11 @@ const WebUsersGrid: React.FC = () => {
             header: "State",
             size: 160,
             muiFilterTextFieldProps: defaultFilterProps,
-            Cell: ({ row }) => {
+            Cell: ({ row, table }) => {
               const orig = row.original as NormalizedUser;
-              const isEditing = editingRowId === orig.id;
+              const tableState = table.getState() as ExtendedTableState;
+              const isEditing = tableState?.editingRowId === orig.id;
+              const editedData = tableState?.editedData || {};
               const state = orig.state || "";
               return (
                 <EditableCell
@@ -1547,6 +1659,7 @@ const WebUsersGrid: React.FC = () => {
                   onChange={(val) => handleFieldChange("state", val)}
                   field="state"
                   placeholder="State"
+                  error={validationErrors.state}
                 />
               );
             },
@@ -1897,11 +2010,20 @@ const WebUsersGrid: React.FC = () => {
         ],
       },
     ],
-    [editingRowId, editedData, canEdit, updateUserMutation.isPending]
+    [canEdit] // Only depend on stable value
   );
 
   return (
     <Box className="web-users-grid-root">
+      {/* Skeleton loading state for initial load */}
+      {isLoading && rows.length === 0 && (
+        <Box sx={{ p: 2 }}>
+          {[...Array(10)].map((_, i) => (
+            <Skeleton key={i} height={56} sx={{ mb: 1, borderRadius: 1 }} />
+          ))}
+        </Box>
+      )}
+
       {/* Role filter control */}
       {/* role filter removed per request */}
       {/* Show a non-blocking Snackbar with the error message when a fetch fails.
@@ -2012,6 +2134,18 @@ const WebUsersGrid: React.FC = () => {
           {...mrtTableProps}
           columns={columns}
           data={filteredRows}
+          renderEmptyRowsFallback={() => (
+            <Box sx={{ p: 4, textAlign: "center" }}>
+              <Typography variant="h6" color="text.secondary" gutterBottom>
+                No users found
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {isLoading
+                  ? "Loading users..."
+                  : "Try adjusting your search or filters"}
+              </Typography>
+            </Box>
+          )}
           muiSearchTextFieldProps={{
             placeholder: "Search...",
             size: "small",
@@ -2026,20 +2160,38 @@ const WebUsersGrid: React.FC = () => {
           enableFullScreenToggle
           enableGlobalFilter
           enableColumnFilters
+          muiTableBodyRowProps={({ row, table }) => {
+            const tableState = table.getState() as ExtendedTableState;
+            const isEditing = tableState?.editingRowId === row.original.id;
+
+            return {
+              sx: {
+                bgcolor: isEditing ? "rgba(25, 118, 210, 0.08)" : "transparent",
+                "&:hover": {
+                  bgcolor: isEditing ? "rgba(25, 118, 210, 0.12)" : undefined,
+                },
+              },
+            };
+          }}
           initialState={{
             density: "compact",
             showGlobalFilter: true,
             showColumnFilters: true,
             columnPinning: { left: ["actions"] },
+            sorting: [{ id: "created_at", desc: true }],
           }}
           muiTableContainerProps={{
             sx: { maxHeight: `calc(100vh - ${TABLE_CONTAINER_OFFSET_PX}px)` },
           }}
-          state={{
-            isLoading: isLoading && rows.length === 0,
-            showProgressBars: isRefetching,
-            pagination,
-          }}
+          state={
+            {
+              isLoading: isLoading && rows.length === 0,
+              showProgressBars: isRefetching,
+              pagination,
+              // Custom state for tracking editing
+              ...(editingRowId !== null && { editingRowId, editedData }),
+            } as any
+          }
           manualPagination
           rowCount={rowCount}
           onPaginationChange={setPagination}
@@ -2085,6 +2237,87 @@ const WebUsersGrid: React.FC = () => {
               <Typography>No image available</Typography>
             )}
           </DialogContent>
+        </Dialog>
+
+        {/* Delete confirmation dialog */}
+        <Dialog
+          open={deleteDialogOpen}
+          onClose={closeDeleteDialog}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !deleteMutation.isPending) {
+              e.preventDefault();
+              confirmDelete();
+            }
+          }}
+          maxWidth="xs"
+          fullWidth
+          aria-labelledby="delete-dialog-title"
+        >
+          <DialogTitle
+            id="delete-dialog-title"
+            sx={{ display: "flex", alignItems: "center", gap: 1 }}
+          >
+            <DeleteIcon sx={{ color: "error.main" }} />
+            <Box sx={{ flex: 1 }}>Confirm Delete</Box>
+            <Typography variant="caption" color="text.secondary" sx={{ mr: 2 }}>
+              Press Enter to confirm, Esc to cancel
+            </Typography>
+            <IconButton
+              aria-label="close"
+              onClick={closeDeleteDialog}
+              size="small"
+              disabled={deleteMutation.isPending}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </DialogTitle>
+          <DialogContent dividers>
+            <Typography variant="body1" gutterBottom>
+              Are you sure you want to delete{" "}
+              <strong>
+                {userToDelete?.student_name ??
+                  userToDelete?.display_name ??
+                  userToDelete?.name ??
+                  `User #${userToDelete?.id ?? "Unknown"}`}
+              </strong>
+              ?
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+              This action cannot be undone. The user data will be permanently
+              removed from the database.
+            </Typography>
+          </DialogContent>
+          <Box
+            sx={{
+              display: "flex",
+              gap: 2,
+              justifyContent: "flex-end",
+              p: 2,
+            }}
+          >
+            <Button
+              variant="outlined"
+              onClick={closeDeleteDialog}
+              disabled={deleteMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={confirmDelete}
+              disabled={deleteMutation.isPending}
+              startIcon={
+                deleteMutation.isPending ? (
+                  <CircularProgress size={16} />
+                ) : (
+                  <DeleteIcon />
+                )
+              }
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </Box>
         </Dialog>
       </ThemeProvider>
     </Box>
