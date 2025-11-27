@@ -28,6 +28,13 @@ function hasRequiredRole(userRole: AppRole, path: string): boolean {
 
 export default async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const hostname = request.nextUrl.hostname;
+
+  // Domain constants (adjust via env if needed)
+  const ADMIN_DOMAIN =
+    process.env.NEXT_PUBLIC_ADMIN_DOMAIN || "admin.neramclasses.com";
+  const APP_DOMAIN =
+    process.env.NEXT_PUBLIC_APP_DOMAIN || "app.neramclasses.com";
 
   // Skip middleware for public routes
   if (
@@ -57,11 +64,26 @@ export default async function middleware(request: NextRequest) {
     return NextResponse.redirect(signInUrl);
   }
 
-  // Check if user has required role
   const userRole = token.role as AppRole;
+
+  // Host-based access control:
+  // - admin.neramclasses.com: only super_admin & admin allowed
+  // - app.neramclasses.com: all roles allowed
+  if (hostname === ADMIN_DOMAIN) {
+    if (userRole === "teacher" || userRole === "student") {
+      // Redirect teachers/students attempting to access admin domain
+      const target = new URL(request.url);
+      target.hostname = APP_DOMAIN;
+      target.protocol = "https:"; // enforce https in production
+      // Optionally carry a flag for UI messaging
+      target.searchParams.set("redirected", "admin-denied");
+      return NextResponse.redirect(target);
+    }
+    // Super admins and admins can access all routes on admin domain
+  }
+
+  // Route-level role protection (path prefixes)
   if (!hasRequiredRole(userRole, pathname)) {
-    // Redirect to unauthorized page
-    // Use the custom unauthorized page under /auth namespace
     const unauthorizedUrl = new URL("/auth/unauthorized", request.url);
     return NextResponse.redirect(unauthorizedUrl);
   }

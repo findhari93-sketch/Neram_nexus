@@ -1,5 +1,6 @@
 import QueryProvider from "@/app/components/Providers/QueryProvider";
 import SessionProvider from "@/app/providers/SessionProvider";
+import RedirectNotice from "@/app/components/RedirectNotice";
 
 // Force dynamic rendering for all pages (app uses client hooks like usePathname)
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export default function RootLayout({
       <body style={{ fontFamily: "ui-sans-serif, system-ui, Segoe UI" }}>
         <SessionProvider>
           <QueryProvider>
+            <RedirectNotice />
             <div>{children}</div>
           </QueryProvider>
         </SessionProvider>

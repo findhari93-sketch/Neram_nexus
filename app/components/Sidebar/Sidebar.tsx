@@ -54,12 +54,27 @@ const iconMap: Record<string, React.ReactNode> = {
 };
 
 function getSidebarItems(role?: string): SidebarItem[] {
-  // Explicit, simplified menus per role as per product spec
-  if (role === "admin" || role === "super_admin") {
-    const dashboardHref = role === "super_admin" ? "/superadmin" : "/admin";
+  // Super admin: show all dashboards
+  if (role === "super_admin") {
     const allowed = new Set([
       "/",
-      dashboardHref,
+      "/superadmin",
+      "/admin",
+      "/web-users",
+      "/class-requests",
+      "/teacher",
+      "/student",
+    ]);
+    return menuItems
+      .filter((m) => allowed.has(m.href))
+      .map((m) => ({ label: m.label, href: m.href, icon: iconMap[m.href] }));
+  }
+
+  // Admin: show admin-specific items
+  if (role === "admin") {
+    const allowed = new Set([
+      "/",
+      "/admin",
       "/web-users",
       "/class-requests",
     ]);
