@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
+import jwt from "jsonwebtoken";
 
 // Environment variables
 const {
@@ -105,64 +106,28 @@ async function sendMail(
 }
 
 /**
- * Generate a secure random payment token
+ * Generate JWT payment token
  */
-function generatePaymentToken(): string {
-  const randomBytes = new Uint8Array(32);
-  crypto.getRandomValues(randomBytes);
-  return Array.from(randomBytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/**
- * Store payment metadata in the database
- */
-async function storePaymentToken(
+function generateJWTPaymentToken(
   userId: string,
-  token: string,
   amount: number,
-  type: string,
+  type: "direct" | "razorpay" | "full" | "partial",
   expiryDays: number = 7
-) {
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + expiryDays);
-
-  const paymentMetadata = {
-    token,
-    expires_at: expiresAt.toISOString(),
-    payable_amount: Number(amount),
-    payment_type: String(type),
-    token_used: false,
-    generated_at: new Date().toISOString(),
-  };
-
-  // Get existing application_details
-  const { data: existingRow } = await supabase
-    .from("users_duplicate")
-    .select("application_details")
-    .eq("id", userId)
-    .single();
-
-  const updatedAppDetails = {
-    ...(existingRow?.application_details || {}),
-    payment_metadata: paymentMetadata,
-  };
-
-  const { error } = await supabase
-    .from("users_duplicate")
-    .update({
-      application_details: updatedAppDetails,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", userId);
-
-  if (error) {
-    console.error("[approve API] Failed to store payment token:", error);
-    throw new Error("Failed to store payment metadata");
+): string {
+  const secret = process.env.PAYMENT_TOKEN_SECRET;
+  if (!secret) {
+    throw new Error("PAYMENT_TOKEN_SECRET not configured");
   }
 
-  return paymentMetadata;
+  const payload = {
+    userId,
+    amount,
+    type,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + expiryDays * 24 * 60 * 60,
+  };
+
+  return jwt.sign(payload, secret);
 }
 
 /**
@@ -533,27 +498,33 @@ export async function POST(request: NextRequest) {
       const paymentOptionText =
         paymentOptionLower === "full" ? "Full Payment" : "Instalments";
 
-      // Generate payment tokens
-      const directToken = generatePaymentToken();
-      const razorpayToken = generatePaymentToken();
-
-      // Store payment tokens in database
-      await storePaymentToken(id, directToken, finalFeePayment, "direct", 7);
-      await storePaymentToken(
+      // Generate JWT payment tokens
+      const directToken = generateJWTPaymentToken(
         id,
-        razorpayToken,
+        finalFeePayment,
+        "direct",
+        7
+      );
+      const razorpayToken = generateJWTPaymentToken(
+        id,
         finalFeePayment,
         "razorpay",
         7
       );
 
-      // Build payment URLs
-      const directPayUrl = `${APP_BASE_URL}/pay?v=${encodeURIComponent(
+      // Build payment URLs pointing to student app
+      const studentAppUrl =
+        process.env.STUDENT_APP_BASE_URL || "https://neramclasses.com";
+      const directPayUrl = `${studentAppUrl}/pay?v=${encodeURIComponent(
         directToken
       )}&type=direct`;
-      const razorPayUrl = `${APP_BASE_URL}/pay?v=${encodeURIComponent(
+      const razorPayUrl = `${studentAppUrl}/pay?v=${encodeURIComponent(
         razorpayToken
       )}&type=razorpay`;
+
+      console.log(`[approve API] Generated payment links for ${userEmail}`);
+      console.log(`[approve API] Direct Pay: ${directPayUrl}`);
+      console.log(`[approve API] Razorpay: ${razorPayUrl}`);
 
       // Generate and send approval email
       const approvalEmailHTML = generateApprovalEmailHTML({
