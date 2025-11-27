@@ -54,33 +54,56 @@ const iconMap: Record<string, React.ReactNode> = {
 };
 
 function getSidebarItems(role?: string): SidebarItem[] {
-  // Super admin: show all dashboards
+  // Detect current domain (client-side)
+  const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+  const ADMIN_DOMAIN =
+    process.env.NEXT_PUBLIC_ADMIN_DOMAIN || "admin.neriumcluster.com";
+  const isAdminDomain = hostname.includes(ADMIN_DOMAIN.split(":")[0]);
+
+  // Super admin: show all dashboards on admin domain, only teacher/student on app domain
   if (role === "super_admin") {
-    const allowed = new Set([
-      "/",
-      "/superadmin",
-      "/admin",
-      "/web-users",
-      "/class-requests",
-      "/teacher",
-      "/student",
-    ]);
-    return menuItems
-      .filter((m) => allowed.has(m.href))
-      .map((m) => ({ label: m.label, href: m.href, icon: iconMap[m.href] }));
+    if (isAdminDomain) {
+      // On admin domain: show all dashboards
+      const allowed = new Set([
+        "/",
+        "/superadmin",
+        "/admin",
+        "/web-users",
+        "/class-requests",
+        "/teacher",
+        "/student",
+      ]);
+      return menuItems
+        .filter((m) => allowed.has(m.href))
+        .map((m) => ({ label: m.label, href: m.href, icon: iconMap[m.href] }));
+    } else {
+      // On app domain: show only teacher/student dashboards
+      const allowed = new Set(["/", "/teacher", "/student"]);
+      return menuItems
+        .filter((m) => allowed.has(m.href))
+        .map((m) => ({ label: m.label, href: m.href, icon: iconMap[m.href] }));
+    }
   }
 
-  // Admin: show admin-specific items
+  // Admin: show admin-specific items on admin domain, teacher/student on app domain
   if (role === "admin") {
-    const allowed = new Set([
-      "/",
-      "/admin",
-      "/web-users",
-      "/class-requests",
-    ]);
-    return menuItems
-      .filter((m) => allowed.has(m.href))
-      .map((m) => ({ label: m.label, href: m.href, icon: iconMap[m.href] }));
+    if (isAdminDomain) {
+      const allowed = new Set([
+        "/",
+        "/admin",
+        "/web-users",
+        "/class-requests",
+      ]);
+      return menuItems
+        .filter((m) => allowed.has(m.href))
+        .map((m) => ({ label: m.label, href: m.href, icon: iconMap[m.href] }));
+    } else {
+      // On app domain: show only teacher/student dashboards
+      const allowed = new Set(["/", "/teacher", "/student"]);
+      return menuItems
+        .filter((m) => allowed.has(m.href))
+        .map((m) => ({ label: m.label, href: m.href, icon: iconMap[m.href] }));
+    }
   }
 
   // Teachers / Students and other roles: limited core items

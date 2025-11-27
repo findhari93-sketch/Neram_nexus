@@ -3,9 +3,21 @@ import { authOptions } from "@/lib/auth";
 import Link from "next/link";
 import SignInButton from "@/app/components/SignInButton";
 import SignOutButton from "@/app/components/SignOutButton";
+import { headers } from "next/headers";
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
+  const headersList = headers();
+  const hostname = headersList.get("host") || "";
+
+  // Domain constants
+  const ADMIN_DOMAIN =
+    process.env.NEXT_PUBLIC_ADMIN_DOMAIN || "admin.neriumcluster.com";
+  const APP_DOMAIN =
+    process.env.NEXT_PUBLIC_APP_DOMAIN || "app.neramclasses.com";
+
+  const isAdminDomain = hostname.includes(ADMIN_DOMAIN.split(":")[0]);
+  const isAppDomain = hostname.includes(APP_DOMAIN.split(":")[0]);
 
   return (
     <div>
@@ -24,16 +36,20 @@ export default async function Home() {
           <nav style={{ marginTop: "1.5rem" }}>
             <h2>Available Dashboards:</h2>
             <ul style={{ marginTop: "1rem" }}>
-              {session.user.role === "super_admin" && (
+              {/* Super Admin Dashboard - only on admin domain */}
+              {session.user.role === "super_admin" && isAdminDomain && (
                 <li>
                   <Link href="/superadmin">Super Admin Dashboard</Link>
                 </li>
               )}
-              {["super_admin", "admin"].includes(session.user.role) && (
-                <li>
-                  <Link href="/admin">Admin Dashboard</Link>
-                </li>
-              )}
+              {/* Admin Dashboard - only on admin domain */}
+              {["super_admin", "admin"].includes(session.user.role) &&
+                isAdminDomain && (
+                  <li>
+                    <Link href="/admin">Admin Dashboard</Link>
+                  </li>
+                )}
+              {/* Teacher Dashboard - available on both domains */}
               {["super_admin", "admin", "teacher"].includes(
                 session.user.role
               ) && (
@@ -41,6 +57,7 @@ export default async function Home() {
                   <Link href="/teacher">Teacher Dashboard</Link>
                 </li>
               )}
+              {/* Student Dashboard - available on both domains */}
               <li>
                 <Link href="/student">Student Dashboard</Link>
               </li>
