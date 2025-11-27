@@ -164,10 +164,14 @@ function generateApprovalEmailHTML(data: {
   approvedBy: string;
   totalCourseFees: number;
   discount: number;
-  finalFeePayment: number;
+  installmentAmount: number;
+  fullPaymentAmount: number;
+  readyForFullPayment: boolean;
   paymentOptionText: string;
-  directPayUrl: string;
-  razorPayUrl: string;
+  installmentDirectUrl: string;
+  installmentRazorPayUrl: string;
+  fullPaymentDirectUrl: string;
+  fullPaymentRazorPayUrl: string;
 }): string {
   const {
     applicantName,
@@ -178,18 +182,15 @@ function generateApprovalEmailHTML(data: {
     approvedBy,
     totalCourseFees,
     discount,
-    finalFeePayment,
+    installmentAmount,
+    fullPaymentAmount,
+    readyForFullPayment,
     paymentOptionText,
-    directPayUrl,
-    razorPayUrl,
+    installmentDirectUrl,
+    installmentRazorPayUrl,
+    fullPaymentDirectUrl,
+    fullPaymentRazorPayUrl,
   } = data;
-
-  const discountText =
-    discount > 0
-      ? `( you are missing Rs.${discount} Discount on Full Payment i.e: Rs.${
-          totalCourseFees - discount
-        } )`
-      : "";
 
   const helpDeskEmail = HELP_DESK_EMAIL || "support@neram.co.in";
   const baseUrl = APP_BASE_URL || "http://localhost:3000";
@@ -282,28 +283,61 @@ function generateApprovalEmailHTML(data: {
     <div class="fees-section">
       <div class="fees-row">
         <div class="fees-label">Total Course Fees :</div>
-        <div class="fees-value">Rs.${totalCourseFees} ${discountText}</div>
+        <div class="fees-value">Rs.${totalCourseFees}</div>
       </div>
       <div class="fees-row">
         <div class="fees-label">Pay Option :</div>
         <div class="fees-value">${paymentOptionText}</div>
       </div>
+      <div class="fees-row">
+        <div class="fees-label">First Installment :</div>
+        <div class="fees-value">Rs.${installmentAmount}</div>
+      </div>
     </div>
 
-    <!-- Contact for discount -->
+    ${
+      readyForFullPayment && discount > 0
+        ? `
+    <!-- Full Payment Option -->
+    <div style="background: #fff3e0; border: 2px solid #ff9800; border-radius: 8px; padding: 15px; margin: 20px; text-align: center;">
+      <div style="color: #e65100; font-weight: bold; font-size: 16px; margin-bottom: 10px;">
+        🎉 Special Offer: Save Rs.${discount} with Full Payment!
+      </div>
+      <div style="font-size: 14px; color: #666; margin-bottom: 15px;">
+        Pay the full amount now and get Rs.${discount} discount. Final amount: <strong>Rs.${fullPaymentAmount}</strong>
+      </div>
+      <div class="buttons">
+        <a href="${fullPaymentDirectUrl}" class="btn btn-purple">Pay Full Amount (Direct Pay)</a>
+        <a href="${fullPaymentRazorPayUrl}" class="btn btn-white">Pay Full Amount (Razorpay)</a>
+      </div>
+      <div style="margin-top: 10px; font-size: 12px; color: #666;">
+        Direct Pay has Rs.100 Cashback offer
+      </div>
+    </div>
+
+    <div style="text-align: center; padding: 10px; font-size: 14px; font-weight: bold; color: #666;">
+      OR
+    </div>
+    `
+        : discount > 0
+        ? `
+    <!-- Discount Info (not ready for full payment) -->
     <div style="text-align: center; padding: 10px; font-size: 13px; color: #666;">
-      To avail full payment Rs.${discount} Discount Email Us / <a href="tel:9176137043" style="color: #7b1fa2;">9176137043</a>
+      To avail Rs.${discount} discount on full payment, contact us at <a href="mailto:${helpDeskEmail}" style="color: #7b1fa2;">${helpDeskEmail}</a> / <a href="tel:9176137043" style="color: #7b1fa2;">9176137043</a>
     </div>
+    `
+        : ""
+    }
 
-    <!-- Final Fee Payment -->
+    <!-- Installment Payment -->
     <div class="final-fee">
-      Final Fee Payment : Rs.${finalFeePayment}
+      First Installment Payment : Rs.${installmentAmount}
     </div>
 
     <!-- Payment Buttons -->
     <div class="buttons">
-      <a href="${directPayUrl}" class="btn btn-purple">Direct Pay</a>
-      <a href="${razorPayUrl}" class="btn btn-white">Razor Pay</a>
+      <a href="${installmentDirectUrl}" class="btn btn-purple">Pay Installment (Direct Pay)</a>
+      <a href="${installmentRazorPayUrl}" class="btn btn-white">Pay Installment (Razorpay)</a>
     </div>
 
     <!-- Cashback Info -->
@@ -484,13 +518,20 @@ export async function POST(request: NextRequest) {
         adminFilled.total_course_fees || user.course_fee || 0
       );
       const discount = Number(adminFilled.discount || user.discount || 0);
-      const finalFeePayment =
-        Number(adminFilled.final_fee_payment_amount) ||
-        Number(adminFilled.full_amount_after_discount) ||
-        Number(user.total_payable) ||
-        0;
+      const firstInstallmentAmount = Number(
+        adminFilled.first_installment_amount || 0
+      );
 
-      // Payment option
+      // Check if user is ready for full payment
+      const readyForFullPayment = Boolean(
+        adminFilled.ready_for_full_payment
+      );
+
+      // Determine payment amounts and type
+      const fullPaymentAmount = totalCourseFees - discount;
+      const installmentAmount = firstInstallmentAmount;
+
+      // Payment option text
       const paymentOpt = adminFilled.payment_options;
       const paymentOptionLower = Array.isArray(paymentOpt)
         ? String(paymentOpt[0] || "partial").toLowerCase()
@@ -498,33 +539,64 @@ export async function POST(request: NextRequest) {
       const paymentOptionText =
         paymentOptionLower === "full" ? "Full Payment" : "Instalments";
 
-      // Generate JWT payment tokens
-      const directToken = generateJWTPaymentToken(
+      // Student app URL
+      const studentAppUrl =
+        process.env.STUDENT_APP_BASE_URL || "https://neramclasses.com";
+
+      // Generate JWT payment tokens for installment (always required)
+      const installmentDirectToken = generateJWTPaymentToken(
         id,
-        finalFeePayment,
+        installmentAmount,
         "direct",
         7
       );
-      const razorpayToken = generateJWTPaymentToken(
+      const installmentRazorpayToken = generateJWTPaymentToken(
         id,
-        finalFeePayment,
+        installmentAmount,
         "razorpay",
         7
       );
 
-      // Build payment URLs pointing to student app
-      const studentAppUrl =
-        process.env.STUDENT_APP_BASE_URL || "https://neramclasses.com";
-      const directPayUrl = `${studentAppUrl}/pay?v=${encodeURIComponent(
-        directToken
+      const installmentDirectUrl = `${studentAppUrl}/pay?v=${encodeURIComponent(
+        installmentDirectToken
       )}&type=direct`;
-      const razorPayUrl = `${studentAppUrl}/pay?v=${encodeURIComponent(
-        razorpayToken
+      const installmentRazorPayUrl = `${studentAppUrl}/pay?v=${encodeURIComponent(
+        installmentRazorpayToken
       )}&type=razorpay`;
 
-      console.log(`[approve API] Generated payment links for ${userEmail}`);
-      console.log(`[approve API] Direct Pay: ${directPayUrl}`);
-      console.log(`[approve API] Razorpay: ${razorPayUrl}`);
+      // Generate full payment tokens only if ready_for_full_payment is true
+      let fullPaymentDirectUrl = "";
+      let fullPaymentRazorPayUrl = "";
+
+      if (readyForFullPayment && discount > 0) {
+        const fullDirectToken = generateJWTPaymentToken(
+          id,
+          fullPaymentAmount,
+          "full",
+          7
+        );
+        const fullRazorpayToken = generateJWTPaymentToken(
+          id,
+          fullPaymentAmount,
+          "full",
+          7
+        );
+
+        fullPaymentDirectUrl = `${studentAppUrl}/pay?v=${encodeURIComponent(
+          fullDirectToken
+        )}&type=direct`;
+        fullPaymentRazorPayUrl = `${studentAppUrl}/pay?v=${encodeURIComponent(
+          fullRazorpayToken
+        )}&type=razorpay`;
+
+        console.log(`[approve API] Generated full payment links for ${userEmail}`);
+        console.log(`[approve API] Full Payment Direct: ${fullPaymentDirectUrl}`);
+        console.log(`[approve API] Full Payment Razorpay: ${fullPaymentRazorPayUrl}`);
+      }
+
+      console.log(`[approve API] Generated installment payment links for ${userEmail}`);
+      console.log(`[approve API] Installment Direct: ${installmentDirectUrl}`);
+      console.log(`[approve API] Installment Razorpay: ${installmentRazorPayUrl}`);
 
       // Generate and send approval email
       const approvalEmailHTML = generateApprovalEmailHTML({
@@ -536,10 +608,14 @@ export async function POST(request: NextRequest) {
         approvedBy: approverEmail,
         totalCourseFees,
         discount,
-        finalFeePayment,
+        installmentAmount,
+        fullPaymentAmount,
+        readyForFullPayment,
         paymentOptionText,
-        directPayUrl,
-        razorPayUrl,
+        installmentDirectUrl,
+        installmentRazorPayUrl,
+        fullPaymentDirectUrl,
+        fullPaymentRazorPayUrl,
       });
 
       await sendMail(
