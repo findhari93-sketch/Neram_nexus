@@ -57,7 +57,7 @@ function getSidebarItems(role?: string): SidebarItem[] {
   // Detect current domain (client-side)
   const hostname = typeof window !== "undefined" ? window.location.hostname : "";
   const ADMIN_DOMAIN =
-    process.env.NEXT_PUBLIC_ADMIN_DOMAIN || "admin.neriumcluster.com";
+    process.env.NEXT_PUBLIC_ADMIN_DOMAIN || "admin.neramclasses.com";
   const isAdminDomain = hostname.includes(ADMIN_DOMAIN.split(":")[0]);
 
   // Super admin: show all dashboards on admin domain, only teacher/student on app domain

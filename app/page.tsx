@@ -12,7 +12,7 @@ export default async function Home() {
 
   // Domain constants
   const ADMIN_DOMAIN =
-    process.env.NEXT_PUBLIC_ADMIN_DOMAIN || "admin.neriumcluster.com";
+    process.env.NEXT_PUBLIC_ADMIN_DOMAIN || "admin.neramclasses.com";
   const APP_DOMAIN =
     process.env.NEXT_PUBLIC_APP_DOMAIN || "app.neramclasses.com";
 
