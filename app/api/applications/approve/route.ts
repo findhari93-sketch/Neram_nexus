@@ -521,6 +521,11 @@ export async function POST(request: NextRequest) {
       const firstInstallmentAmount = Number(
         adminFilled.first_installment_amount || 0
       );
+      const finalFeePaymentAmount = Number(
+        adminFilled.final_fee_payment_amount ||
+          adminFilled.first_installment_amount ||
+          0
+      );
 
       // Check if user is ready for full payment
       const readyForFullPayment = Boolean(
@@ -529,7 +534,7 @@ export async function POST(request: NextRequest) {
 
       // Determine payment amounts and type
       const fullPaymentAmount = totalCourseFees - discount;
-      const installmentAmount = firstInstallmentAmount;
+      const installmentAmount = finalFeePaymentAmount || firstInstallmentAmount;
 
       // Payment option text
       const paymentOpt = adminFilled.payment_options;
