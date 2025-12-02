@@ -536,6 +536,58 @@ export async function POST(request: NextRequest) {
       const fullPaymentAmount = totalCourseFees - discount;
       const installmentAmount = finalFeePaymentAmount || firstInstallmentAmount;
 
+      // Generate and store final_fee_payment token if it doesn't exist
+      let finalFeePaymentToken = adminFilled.final_fee_payment?.token;
+
+      if (!finalFeePaymentToken && finalFeePaymentAmount > 0) {
+        // Generate JWT token with 1 hour expiry
+        finalFeePaymentToken = generateJWTPaymentToken(
+          id,
+          finalFeePaymentAmount,
+          "full",
+          1 / 24 // 1 hour in days
+        );
+
+        // Store token in database
+        const updatedFinalFeePayment = {
+          ...(adminFilled.final_fee_payment || {}),
+          token: finalFeePaymentToken,
+          amount: finalFeePaymentAmount,
+          generated_at: new Date().toISOString(),
+          expires_at: new Date(
+            Date.now() + 60 * 60 * 1000
+          ).toISOString(), // 1 hour
+        };
+
+        const updatedAdminFilled = {
+          ...adminFilled,
+          final_fee_payment: updatedFinalFeePayment,
+        };
+
+        // Update database with token
+        const { error: tokenUpdateError } = await supabase
+          .from("users_duplicate")
+          .update({
+            application_details: {
+              ...appDetails,
+              admin_filled: updatedAdminFilled,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", id);
+
+        if (tokenUpdateError) {
+          console.error(
+            "[approve API] Failed to store payment token:",
+            tokenUpdateError
+          );
+        } else {
+          console.log(
+            `[approve API] Stored final_fee_payment.token for user ${id}`
+          );
+        }
+      }
+
       // Payment option text
       const paymentOpt = adminFilled.payment_options;
       const paymentOptionLower = Array.isArray(paymentOpt)
@@ -631,6 +683,23 @@ export async function POST(request: NextRequest) {
       );
 
       console.log(`[approve API] Approval email sent to ${userEmail}`);
+
+      // Return approval response with token and payment URL
+      const paymentUrl = finalFeePaymentToken
+        ? `${studentAppUrl}/pay?v=${encodeURIComponent(
+            finalFeePaymentToken
+          )}&type=full`
+        : null;
+
+      return NextResponse.json({
+        ok: true,
+        updated: updatedUser,
+        emailSent: true,
+        status: "Approved",
+        paymentToken: finalFeePaymentToken,
+        paymentUrl,
+        paymentAmount: finalFeePaymentAmount,
+      });
     } else {
       // Send rejection email
       const rejectionEmailHTML = generateRejectionEmailHTML(
@@ -646,13 +715,14 @@ export async function POST(request: NextRequest) {
       );
 
       console.log(`[approve API] Rejection email sent to ${userEmail}`);
-    }
 
-    return NextResponse.json({
-      ok: true,
-      updated: updatedUser,
-      emailSent: true,
-    });
+      return NextResponse.json({
+        ok: true,
+        updated: updatedUser,
+        emailSent: true,
+        status: "Rejected",
+      });
+    }
   } catch (error: any) {
     console.error("[approve API] Error:", error);
     return NextResponse.json(
