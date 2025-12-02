@@ -10,7 +10,9 @@
       "Bash(git push)",
       "Bash(del nul 2)",
       "Bash(npx tsc:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(npm install:*)",
+      "Bash(npm test:*)"
     ],
     "deny": [],
     "ask": []
