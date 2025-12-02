@@ -103,6 +103,21 @@ interface NormalizedClassRequest extends Record<string, unknown> {
   verified?: string | boolean;
   signature?: string;
   installment_type?: string;
+  token_used?: boolean;
+  discount_full?: unknown;
+  last_verify_at?: string;
+  order_created_at?: string;
+  token_expires?: string;
+  installment1_amount?: unknown;
+  installment2_amount?: unknown;
+  payment_history?: Array<{
+    ts?: string;
+    event?: string;
+    amount?: number;
+    source?: string;
+    orderId?: string;
+    paymentId?: string;
+  }>;
 }
 
 // Avatar component
@@ -1094,9 +1109,9 @@ function normalizeClassRequest(raw: RawRow): NormalizedClassRequest {
   out.payment_status = payment.payment_status;
   out.payment_method = payment.payment_method;
   out.payment_at = payment.payment_at;
-  out.payment_id = payment.payment_id;
-  out.order_id = payment.order_id;
-  out.amount = payment.amount;
+  out.payment_id = payment.payment_id || payment.razorpay_payment_id;
+  out.order_id = payment.order_id || payment.razorpay_order_id;
+  out.amount = payment.amount || payment.payable_amount;
   out.currency = payment.currency;
   out.upi_id = payment.upi_id;
   out.bank = payment.bank;
@@ -1104,6 +1119,16 @@ function normalizeClassRequest(raw: RawRow): NormalizedClassRequest {
   out.verified = payment.verified;
   out.signature = payment.signature;
   out.installment_type = payment.installment_type;
+
+  // Additional payment fields
+  out.token_used = payment.token_used;
+  out.discount_full = payment.discount_full;
+  out.last_verify_at = payment.last_verify_at;
+  out.order_created_at = payment.order_created_at;
+  out.token_expires = payment.token_expires;
+  out.installment1_amount = payment.installment1_amount;
+  out.installment2_amount = payment.installment2_amount;
+  out.payment_history = payment.payment_history;
 
   return out as NormalizedClassRequest;
 }
@@ -1476,52 +1501,303 @@ export default function ClassRequestDetailsPage() {
                 boxSizing: "border-box",
               }}
             >
-              <InfoCard title="Payment Details" icon={<PaymentIcon />}>
-                <LabelValue
-                  label="Payment Status"
-                  value={user.payment_status}
-                  type="badge"
-                  badgeColor={
-                    user.payment_status === "captured" ||
-                    user.payment_status === "success"
-                      ? "success"
-                      : user.payment_status === "failed"
-                      ? "error"
-                      : "warning"
-                  }
-                />
-                <LabelValue
-                  label="Payment Method"
-                  value={user.payment_method}
-                />
-                <LabelValue
-                  label="Payment Date"
-                  value={user.payment_at}
-                  type="date"
-                />
-                <LabelValue label="Payment ID" value={user.payment_id} />
-                <LabelValue label="Order ID" value={user.order_id} />
-                <LabelValue
-                  label="Amount"
-                  value={user.amount as number}
-                  type="currency"
-                />
-                <LabelValue label="Currency" value={user.currency} />
-                <LabelValue label="UPI ID" value={user.upi_id} />
-                <LabelValue label="Bank" value={user.bank} />
-                <LabelValue label="Receipt" value={user.receipt} />
-                <LabelValue
-                  label="Verified"
-                  value={user.verified ? "Yes" : "No"}
-                  type="badge"
-                  badgeColor={user.verified ? "success" : "warning"}
-                />
-                <LabelValue label="Signature" value={user.signature} />
-                <LabelValue
-                  label="Installment Type"
-                  value={user.installment_type}
-                />
-              </InfoCard>
+              <Card
+                sx={{
+                  height: "100%",
+                  transition: "box-shadow 0.3s",
+                  "&:hover": {
+                    boxShadow: 6,
+                  },
+                }}
+              >
+                <CardContent>
+                  <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
+                    <Box sx={{ color: "primary.main", mr: 1 }}>
+                      <PaymentIcon />
+                    </Box>
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      Payment Details
+                    </Typography>
+                  </Box>
+
+                  {/* Payment Status Section */}
+                  <Box
+                    sx={{
+                      mb: 3,
+                      p: 2,
+                      borderRadius: 2,
+                      bgcolor:
+                        user.payment_status === "paid"
+                          ? "success.lighter"
+                          : user.payment_status === "failed"
+                          ? "error.lighter"
+                          : "warning.lighter",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Status
+                      </Typography>
+                      <Chip
+                        label={user.payment_status?.toUpperCase() || "PENDING"}
+                        color={
+                          user.payment_status === "paid"
+                            ? "success"
+                            : user.payment_status === "failed"
+                            ? "error"
+                            : "warning"
+                        }
+                        size="small"
+                        sx={{ fontWeight: 600 }}
+                      />
+                    </Box>
+                  </Box>
+
+                  {/* Payment Information */}
+                  <LabelValue
+                    label="Payment Method"
+                    value={user.payment_method}
+                  />
+                  <LabelValue
+                    label="Payment Amount"
+                    value={user.amount as number}
+                    type="currency"
+                  />
+                  <LabelValue
+                    label="Payment Date"
+                    value={user.payment_at}
+                    type="date"
+                  />
+                  {user.order_created_at && (
+                    <LabelValue
+                      label="Order Created At"
+                      value={user.order_created_at}
+                      type="date"
+                    />
+                  )}
+                  {user.last_verify_at && (
+                    <LabelValue
+                      label="Last Verified At"
+                      value={user.last_verify_at}
+                      type="date"
+                    />
+                  )}
+
+                  {/* Transaction Details */}
+                  {(user.payment_id || user.order_id) && (
+                    <>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ mt: 3, mb: 2, fontWeight: 600 }}
+                      >
+                        Transaction Details
+                      </Typography>
+                      {user.order_id && (
+                        <LabelValue label="Order ID" value={user.order_id} />
+                      )}
+                      {user.payment_id && (
+                        <LabelValue
+                          label="Payment ID"
+                          value={user.payment_id}
+                        />
+                      )}
+                      {user.receipt && (
+                        <LabelValue label="Receipt" value={user.receipt} />
+                      )}
+                    </>
+                  )}
+
+                  {/* Verification Status */}
+                  {user.verified !== undefined && (
+                    <Box sx={{ mt: 2 }}>
+                      <LabelValue
+                        label="Verified"
+                        value={user.verified ? "Yes" : "No"}
+                        type="badge"
+                        badgeColor={user.verified ? "success" : "warning"}
+                      />
+                    </Box>
+                  )}
+
+                  {/* Payment Method Details */}
+                  {(user.upi_id || user.bank) && (
+                    <>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ mt: 3, mb: 2, fontWeight: 600 }}
+                      >
+                        Payment Method Details
+                      </Typography>
+                      {user.upi_id && (
+                        <LabelValue label="UPI ID" value={user.upi_id} />
+                      )}
+                      {user.bank && (
+                        <LabelValue label="Bank" value={user.bank} />
+                      )}
+                    </>
+                  )}
+
+                  {/* Installment Information */}
+                  {(user.installment1_amount ||
+                    user.installment2_amount ||
+                    user.installment_type) && (
+                    <>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ mt: 3, mb: 2, fontWeight: 600 }}
+                      >
+                        Installment Information
+                      </Typography>
+                      {user.installment_type && (
+                        <LabelValue
+                          label="Installment Type"
+                          value={user.installment_type}
+                        />
+                      )}
+                      {user.installment1_amount && (
+                        <LabelValue
+                          label="1st Installment"
+                          value={user.installment1_amount as number}
+                          type="currency"
+                        />
+                      )}
+                      {user.installment2_amount && (
+                        <LabelValue
+                          label="2nd Installment"
+                          value={user.installment2_amount as number}
+                          type="currency"
+                        />
+                      )}
+                    </>
+                  )}
+
+                  {/* Payment History */}
+                  {user.payment_history &&
+                    Array.isArray(user.payment_history) &&
+                    user.payment_history.length > 0 && (
+                      <>
+                        <Typography
+                          variant="subtitle2"
+                          sx={{ mt: 3, mb: 2, fontWeight: 600 }}
+                        >
+                          Payment History
+                        </Typography>
+                        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                          {user.payment_history.map((event, idx) => (
+                            <Box
+                              key={idx}
+                              sx={{
+                                p: 1.5,
+                                borderRadius: 1,
+                                border: "1px solid",
+                                borderColor: "divider",
+                                bgcolor: "background.default",
+                              }}
+                            >
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  mb: 1,
+                                }}
+                              >
+                                <Chip
+                                  label={event.event || "Event"}
+                                  size="small"
+                                  color={
+                                    event.event?.includes("verified") ||
+                                    event.event?.includes("success")
+                                      ? "success"
+                                      : event.event?.includes("failed")
+                                      ? "error"
+                                      : "info"
+                                  }
+                                  sx={{ fontWeight: 500 }}
+                                />
+                                {event.amount && (
+                                  <Typography
+                                    variant="body2"
+                                    sx={{ fontWeight: 600 }}
+                                  >
+                                    {new Intl.NumberFormat("en-IN", {
+                                      style: "currency",
+                                      currency: "INR",
+                                    }).format(event.amount)}
+                                  </Typography>
+                                )}
+                              </Box>
+                              {event.ts && (
+                                <Typography
+                                  variant="caption"
+                                  sx={{ display: "block", color: "text.secondary" }}
+                                >
+                                  {new Date(event.ts).toLocaleString()}
+                                </Typography>
+                              )}
+                              {event.source && (
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    display: "block",
+                                    color: "text.secondary",
+                                    mt: 0.5,
+                                  }}
+                                >
+                                  Source: {event.source}
+                                </Typography>
+                              )}
+                              {event.orderId && (
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    display: "block",
+                                    color: "text.secondary",
+                                    mt: 0.5,
+                                    fontFamily: "monospace",
+                                  }}
+                                >
+                                  Order: {event.orderId}
+                                </Typography>
+                              )}
+                              {event.paymentId && (
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    display: "block",
+                                    color: "text.secondary",
+                                    mt: 0.5,
+                                    fontFamily: "monospace",
+                                  }}
+                                >
+                                  Payment: {event.paymentId}
+                                </Typography>
+                              )}
+                            </Box>
+                          ))}
+                        </Box>
+                      </>
+                    )}
+
+                  {/* Token Usage Status */}
+                  {user.token_used !== undefined && (
+                    <Box sx={{ mt: 3 }}>
+                      <LabelValue
+                        label="Payment Token Used"
+                        value={user.token_used ? "Yes" : "No"}
+                        type="badge"
+                        badgeColor={user.token_used ? "info" : "default"}
+                      />
+                    </Box>
+                  )}
+                </CardContent>
+              </Card>
             </Box>
           </Box>
 

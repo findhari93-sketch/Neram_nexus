@@ -158,7 +158,9 @@ describe("Final Fee Payment Token Storage", () => {
   });
 
   it("should generate token when none exists", () => {
-    const adminFilled = {
+    const adminFilled: {
+      final_fee_payment: { token?: string } | null;
+    } = {
       final_fee_payment: null,
     };
 
