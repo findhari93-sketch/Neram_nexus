@@ -620,6 +620,11 @@ const AdminFilledCard: React.FC<{
     }
   };
 
+  // Check if application is already processed
+  const isApproved = adminObj.application_admin_approval === "Approved";
+  const isRejected = adminObj.application_admin_approval === "Rejected";
+  const isProcessed = isApproved || isRejected;
+
   return (
     <Box
       sx={{
@@ -637,6 +642,29 @@ const AdminFilledCard: React.FC<{
             </Typography>
           </Box>
 
+          {/* Show approval status if already processed */}
+          {isProcessed && (
+            <Alert
+              severity={isApproved ? "success" : "error"}
+              sx={{ mb: 3 }}
+              icon={isApproved ? <SchoolIcon /> : undefined}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                Application {isApproved ? "Approved" : "Rejected"}
+              </Typography>
+              {adminObj.approved_by && (
+                <Typography variant="caption" sx={{ display: "block", mt: 0.5 }}>
+                  By: {String(adminObj.approved_by)}
+                </Typography>
+              )}
+              {adminObj.approved_at && (
+                <Typography variant="caption" sx={{ display: "block" }}>
+                  {new Date(String(adminObj.approved_at)).toLocaleString()}
+                </Typography>
+              )}
+            </Alert>
+          )}
+
           {canEdit && (
             <Box sx={{ display: "flex", gap: 1, mb: 3 }}>
               <Button
@@ -644,17 +672,17 @@ const AdminFilledCard: React.FC<{
                 variant="contained"
                 color="success"
                 onClick={() => handleApproval("Approved")}
-                disabled={isApproving}
+                disabled={isApproving || isApproved}
                 fullWidth
               >
-                Approve
+                {isApproved ? "Already Approved" : "Approve"}
               </Button>
               <Button
                 size="small"
                 variant="contained"
                 color="error"
                 onClick={() => handleApproval("Rejected")}
-                disabled={isApproving}
+                disabled={isApproving || isApproved}
                 fullWidth
               >
                 Reject
@@ -675,6 +703,7 @@ const AdminFilledCard: React.FC<{
                 size="small"
                 value={finalCourse}
                 onChange={(e) => setFinalCourse(e.target.value)}
+                disabled={isApproved}
                 sx={{ flex: 1 }}
               >
                 <MenuItem value="NATA/JEE2 Year Long">
@@ -699,6 +728,7 @@ const AdminFilledCard: React.FC<{
                 size="small"
                 value={courseDuration}
                 onChange={(e) => setCourseDuration(e.target.value)}
+                disabled={isApproved}
                 sx={{ flex: 1 }}
               >
                 <MenuItem value="1 Year">1 Year</MenuItem>
@@ -724,6 +754,7 @@ const AdminFilledCard: React.FC<{
                   const idx = years.indexOf(v);
                   if (idx >= 0) setYearIndex(idx);
                 }}
+                disabled={isApproved}
                 sx={{ flex: 1 }}
               >
                 {years.map((y) => (
@@ -752,11 +783,13 @@ const AdminFilledCard: React.FC<{
                   value="Full"
                   control={<Radio size="small" />}
                   label="Full"
+                  disabled={isApproved}
                 />
                 <FormControlLabel
                   value="Partial"
                   control={<Radio size="small" />}
                   label="Partial"
+                  disabled={isApproved}
                 />
               </RadioGroup>
             </Box>
@@ -774,6 +807,7 @@ const AdminFilledCard: React.FC<{
                 type="number"
                 value={totalCourseFees ?? ""}
                 onChange={(e) => setTotalCourseFees(e.target.value)}
+                disabled={isApproved}
                 inputProps={{ min: 0 }}
                 sx={{ flex: 1 }}
               />
@@ -792,6 +826,7 @@ const AdminFilledCard: React.FC<{
                 type="number"
                 value={discount ?? ""}
                 onChange={(e) => setDiscount(e.target.value)}
+                disabled={isApproved}
                 inputProps={{ min: 0 }}
                 sx={{ flex: 1, maxWidth: 200 }}
               />
@@ -811,6 +846,7 @@ const AdminFilledCard: React.FC<{
                   type="number"
                   value={firstInstallmentAmount ?? ""}
                   onChange={(e) => setFirstInstallmentAmount(e.target.value)}
+                  disabled={isApproved}
                   inputProps={{ min: 0 }}
                   sx={{ flex: 1 }}
                 />
@@ -832,6 +868,7 @@ const AdminFilledCard: React.FC<{
                     type="date"
                     value={offerPayBeforeDate ?? ""}
                     onChange={(e) => setOfferPayBeforeDate(e.target.value)}
+                    disabled={isApproved}
                     InputLabelProps={{ shrink: true }}
                     sx={{ flex: 1 }}
                   />
@@ -872,6 +909,7 @@ const AdminFilledCard: React.FC<{
                     type="date"
                     value={secondInstallmentDate ?? ""}
                     onChange={(e) => setSecondInstallmentDate(e.target.value)}
+                    disabled={isApproved}
                     InputLabelProps={{ shrink: true }}
                     sx={{ flex: 1 }}
                   />
@@ -920,16 +958,19 @@ const AdminFilledCard: React.FC<{
                   value="yes"
                   control={<Radio size="small" />}
                   label="Yes"
+                  disabled={isApproved}
                 />
                 <FormControlLabel
                   value="no"
                   control={<Radio size="small" />}
                   label="No"
+                  disabled={isApproved}
                 />
                 <FormControlLabel
                   value="maybe"
                   control={<Radio size="small" />}
                   label="Maybe"
+                  disabled={isApproved}
                 />
               </RadioGroup>
             </Box>
@@ -953,6 +994,7 @@ const AdminFilledCard: React.FC<{
                 rows={3}
                 value={adminComment}
                 onChange={(e) => setAdminComment(e.target.value)}
+                disabled={isApproved}
                 sx={{ flex: 1 }}
               />
             </Box>
@@ -1007,16 +1049,16 @@ const AdminFilledCard: React.FC<{
                     : 0;
                   setYearIndex(idx >= 0 ? idx : 0);
                 }}
-                disabled={saving}
+                disabled={saving || isApproved}
               >
                 Reset
               </Button>
               <Button
                 variant="contained"
                 onClick={saveAdminFilled}
-                disabled={saving}
+                disabled={saving || isApproved}
               >
-                {saving ? "Saving..." : "Save"}
+                {saving ? "Saving..." : isApproved ? "Locked (Approved)" : "Save"}
               </Button>
             </Stack>
           </Box>
