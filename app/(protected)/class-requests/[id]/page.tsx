@@ -652,12 +652,12 @@ const AdminFilledCard: React.FC<{
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
                 Application {isApproved ? "Approved" : "Rejected"}
               </Typography>
-              {adminObj.approved_by && (
+              {Boolean(adminObj.approved_by) && (
                 <Typography variant="caption" sx={{ display: "block", mt: 0.5 }}>
                   By: {String(adminObj.approved_by)}
                 </Typography>
               )}
-              {adminObj.approved_at && (
+              {Boolean(adminObj.approved_at) && (
                 <Typography variant="caption" sx={{ display: "block" }}>
                   {new Date(String(adminObj.approved_at)).toLocaleString()}
                 </Typography>
