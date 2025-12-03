@@ -436,8 +436,15 @@ const AdminFilledCard: React.FC<{
   const [discount, setDiscount] = React.useState(adminObj.discount ?? "");
   const [paymentOptions, setPaymentOptions] = React.useState(() => {
     const p = adminObj.payment_options || null;
-    if (Array.isArray(p) && p.length > 0) return p.map((x: any) => String(x));
-    if (typeof p === "string" && p) return [String(p)];
+    const capitalize = (str: string) =>
+      str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+
+    if (Array.isArray(p) && p.length > 0) {
+      return p.map((x: any) => capitalize(String(x)));
+    }
+    if (typeof p === "string" && p) {
+      return [capitalize(String(p))];
+    }
     return ["Partial"];
   });
 
@@ -1011,16 +1018,16 @@ const AdminFilledCard: React.FC<{
                   );
                   setCourseDuration(adminObj.course_duration || "");
 
+                  const capitalize = (str: string) =>
+                    str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+
                   let resetPaymentOpts: string[];
                   if (typeof adminObj.payment_options === "string") {
                     const p = adminObj.payment_options;
-                    resetPaymentOpts = [
-                      String(p).charAt(0).toUpperCase() + String(p).slice(1),
-                    ];
+                    resetPaymentOpts = [capitalize(String(p))];
                   } else if (Array.isArray(adminObj.payment_options)) {
                     resetPaymentOpts = (adminObj.payment_options as any[]).map(
-                      (p: any) =>
-                        String(p).charAt(0).toUpperCase() + String(p).slice(1)
+                      (p: any) => capitalize(String(p))
                     );
                   } else {
                     resetPaymentOpts = ["Partial"];
