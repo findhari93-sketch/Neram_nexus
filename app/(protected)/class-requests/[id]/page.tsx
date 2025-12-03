@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase, UsersDuplicateRow } from "@/lib/supabaseClient";
+import { format } from "date-fns";
 import {
   Box,
   Button,
@@ -250,7 +251,7 @@ const LabelValue: React.FC<{
       case "date": {
         const v = value as any;
         const d = new Date(v);
-        return isNaN(d.getTime()) ? String(v) : d.toLocaleString();
+        return isNaN(d.getTime()) ? String(v) : format(d, "MMM dd, yyyy HH:mm");
       }
       case "currency": {
         const n =
@@ -665,7 +666,7 @@ const AdminFilledCard: React.FC<{
               )}
               {Boolean(adminObj.approved_at) && (
                 <Typography variant="caption" sx={{ display: "block" }}>
-                  {new Date(String(adminObj.approved_at)).toLocaleString()}
+                  {format(new Date(String(adminObj.approved_at)), "MMM dd, yyyy HH:mm")}
                 </Typography>
               )}
             </Alert>
@@ -1786,7 +1787,7 @@ export default function ClassRequestDetailsPage() {
                                   variant="caption"
                                   sx={{ display: "block", color: "text.secondary" }}
                                 >
-                                  {new Date(event.ts).toLocaleString()}
+                                  {format(new Date(event.ts), "MMM dd, yyyy HH:mm")}
                                 </Typography>
                               )}
                               {event.source && (
