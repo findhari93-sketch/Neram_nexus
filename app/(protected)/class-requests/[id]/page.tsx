@@ -542,8 +542,7 @@ const AdminFilledCard: React.FC<{
       // Compute final fee payment amount
       const finalComputedRaw = isFullSelected
         ? (safeNumber(totalCourseFees) ?? 0) - (safeNumber(discount) ?? 0)
-        : (safeNumber(firstInstallmentAmount) ?? 0) -
-          (safeNumber(discount) ?? 0);
+        : safeNumber(firstInstallmentAmount) ?? 0;
       const finalComputed = Number.isFinite(finalComputedRaw)
         ? Math.max(0, finalComputedRaw)
         : null;
@@ -932,7 +931,7 @@ const AdminFilledCard: React.FC<{
                   0,
                   (isFullSelected
                     ? toNum(totalCourseFees) - toNum(discount)
-                    : toNum(firstInstallmentAmount) - toNum(discount)) || 0
+                    : toNum(firstInstallmentAmount)) || 0
                 )}
                 disabled
                 inputProps={{ min: 0 }}
