@@ -16,8 +16,13 @@ export default async function Home() {
   const APP_DOMAIN =
     process.env.NEXT_PUBLIC_APP_DOMAIN || "app.neramclasses.com";
 
-  const isAdminDomain = hostname.includes(ADMIN_DOMAIN.split(":")[0]);
-  const isAppDomain = hostname.includes(APP_DOMAIN.split(":")[0]);
+  // Check if localhost (development) - allow access to all dashboards
+  const isLocalhost =
+    hostname.includes("localhost") || hostname.includes("127.0.0.1");
+  const isAdminDomain =
+    isLocalhost || hostname.includes(ADMIN_DOMAIN.split(":")[0]);
+  const isAppDomain =
+    isLocalhost || hostname.includes(APP_DOMAIN.split(":")[0]);
 
   return (
     <div>

@@ -93,6 +93,35 @@ export const menuItems: MenuItem[] = [
     },
   },
   {
+    label: "Exam Centers",
+    href: "/exam-centers",
+    roles: ["admin", "super_admin"],
+    buildBreadcrumbs: (pathname: string, item: MenuItem) => {
+      const crumbs: AppBreadcrumb[] = [
+        { label: "Home", href: "/" },
+        { label: "Exam Centers", href: "/exam-centers" },
+      ];
+
+      // Check if we're on a detail/form page (has an ID segment or 'new' segment)
+      const remainder = pathname.slice(item.href.length).replace(/^\//, "");
+      if (remainder) {
+        const segments = remainder.split("/").filter(Boolean);
+        if (segments.length > 0) {
+          if (segments[0] === "new") {
+            crumbs.push({ label: "Add Center", href: "/exam-centers/new" });
+          } else {
+            crumbs.push({
+              label: "Edit Center",
+              href: `${item.href}/${segments[0]}`,
+            });
+          }
+        }
+      }
+
+      return crumbs;
+    },
+  },
+  {
     label: "Teachers",
     href: "/teacher",
     roles: ["teacher", "admin", "super_admin"],

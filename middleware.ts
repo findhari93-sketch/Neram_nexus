@@ -66,10 +66,15 @@ export default async function middleware(request: NextRequest) {
 
   const userRole = token.role as AppRole;
 
+  // Allow localhost to access both admin and app domain features
+  const isLocalhost =
+    hostname.includes("localhost") || hostname.includes("127.0.0.1");
+
   // Host-based access control:
   // - admin.neramclasses.com: only super_admin & admin allowed
   // - app.neramclasses.com: all roles allowed
-  if (hostname === ADMIN_DOMAIN) {
+  // - localhost: all roles can access all features (development)
+  if (hostname === ADMIN_DOMAIN && !isLocalhost) {
     if (userRole === "teacher" || userRole === "student") {
       // Redirect teachers/students attempting to access admin domain
       const target = new URL(request.url);

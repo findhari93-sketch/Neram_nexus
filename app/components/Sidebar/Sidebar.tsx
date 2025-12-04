@@ -49,16 +49,23 @@ const iconMap: Record<string, React.ReactNode> = {
   "/admin": <DashboardIcon />,
   "/web-users": <GroupIcon />,
   "/class-requests": <HowToRegIcon />,
+  "/exam-centers": <SchoolIcon />,
   "/teacher": <SchoolIcon />,
   "/student": <PeopleIcon />,
 };
 
 function getSidebarItems(role?: string): SidebarItem[] {
   // Detect current domain (client-side)
-  const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+  const hostname =
+    typeof window !== "undefined" ? window.location.hostname : "";
   const ADMIN_DOMAIN =
     process.env.NEXT_PUBLIC_ADMIN_DOMAIN || "admin.neramclasses.com";
-  const isAdminDomain = hostname.includes(ADMIN_DOMAIN.split(":")[0]);
+
+  // Check if localhost (development) - allow access to all dashboards
+  const isLocalhost =
+    hostname.includes("localhost") || hostname.includes("127.0.0.1");
+  const isAdminDomain =
+    isLocalhost || hostname.includes(ADMIN_DOMAIN.split(":")[0]);
 
   // Super admin: show all dashboards on admin domain, only teacher/student on app domain
   if (role === "super_admin") {
@@ -70,6 +77,7 @@ function getSidebarItems(role?: string): SidebarItem[] {
         "/admin",
         "/web-users",
         "/class-requests",
+        "/exam-centers",
         "/teacher",
         "/student",
       ]);
@@ -93,6 +101,7 @@ function getSidebarItems(role?: string): SidebarItem[] {
         "/admin",
         "/web-users",
         "/class-requests",
+        "/exam-centers",
       ]);
       return menuItems
         .filter((m) => allowed.has(m.href))
