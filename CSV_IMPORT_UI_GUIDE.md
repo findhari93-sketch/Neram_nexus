@@ -3,12 +3,14 @@
 ## UI Layout Overview
 
 ### Modal Header
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ ⬆️ [Bulk Import Exam Centers]                          [✕]  │
 │    Upload and edit data before importing                     │
 └──────────────────────────────────────────────────────────────┘
 ```
+
 - **Gradient Background**: Purple gradient (#667eea → #764ba2)
 - **Icon**: FileUploadIcon
 - **Title**: "Bulk Import Exam Centers"
@@ -16,11 +18,13 @@
 - **Close Button**: White X icon
 
 ### Stepper Navigation
+
 ```
 Step 0              Step 1           Step 2              Step 3
 [Download]  →  [Upload File]  →  [Review & Edit]  →  [Import]
    ✓              ● (current)         ○               ○
 ```
+
 - Active step has filled circle (●)
 - Completed steps have checkmark (✓)
 - Inactive steps have empty circle (○)
@@ -48,6 +52,7 @@ Step 0              Step 1           Step 2              Step 3
 ```
 
 **Key Elements**:
+
 - Info Alert (blue background)
 - Card with bullet points
 - Download button (gradient background)
@@ -75,6 +80,7 @@ Step 0              Step 1           Step 2              Step 3
 ```
 
 **Key Elements**:
+
 - Drag-drop file upload area
 - Dashed border with hover effect
 - File info display (name + size)
@@ -104,6 +110,7 @@ Step 0              Step 1           Step 2              Step 3
 ```
 
 **Table Columns**:
+
 - `#`: Row number
 - `Center Name`: Text (editable)
 - `Exam Type`: Dropdown chip (editable)
@@ -113,6 +120,7 @@ Step 0              Step 1           Step 2              Step 3
 - Actions: Edit/Delete icons
 
 **Edit Mode (Inline)**:
+
 ```
 │4│ [Text Input] │[Dropdown]│[Input]│[Input]│[Dropdown]│[✓ ✕]
                                                            ↑   ↑
@@ -137,6 +145,7 @@ Step 0              Step 1           Step 2              Step 3
 ```
 
 **After Import - Success**:
+
 ```
 ┌─ Modal Content ─────────────────────────────────────────┐
 │                                                          │
@@ -148,6 +157,7 @@ Step 0              Step 1           Step 2              Step 3
 ```
 
 **After Import - Partial Success**:
+
 ```
 ┌─ Modal Content ─────────────────────────────────────────┐
 │                                                          │
@@ -168,6 +178,7 @@ Step 0              Step 1           Step 2              Step 3
 ## Edit Mode - Detailed View
 
 ### Normal Row
+
 ```
 ┌─────┬──────────────────┬────────┬────────┬────────┬─────────┬─────────┐
 │ #   │ Center Name      │ Type   │ State  │ City   │ Status  │ Actions │
@@ -177,6 +188,7 @@ Step 0              Step 1           Step 2              Step 3
 ```
 
 ### Row in Edit Mode
+
 ```
 ┌─────┬──────────────────┬────────┬────────┬────────┬─────────┬─────────┐
 │ #   │ Center Name      │ Type   │ State  │ City   │ Status  │ Actions │
@@ -187,6 +199,7 @@ Step 0              Step 1           Step 2              Step 3
 ```
 
 **Edit Fields**:
+
 - `Center Name`: TextField (text input)
 - `Type`: Select dropdown (NATA, JEE, BOTH)
 - `State`: TextField (text input)
@@ -337,6 +350,7 @@ Step 0              Step 1           Step 2              Step 3
 ## Color Scheme & Styling
 
 ### Gradient Colors
+
 ```
 Header Background: linear-gradient(135deg, #667eea 0%, #764ba2 100%)
 - Start Color: #667eea (Blue)
@@ -344,6 +358,7 @@ Header Background: linear-gradient(135deg, #667eea 0%, #764ba2 100%)
 ```
 
 ### Status Colors
+
 ```
 Active Status:      #10b981 (Green)
 Inactive Status:    #9ca3af (Gray)
@@ -353,6 +368,7 @@ Info Alert:         #3b82f6 (Blue)
 ```
 
 ### Component Styling
+
 ```
 Borders:        Rounded corners (8px radius)
 Elevation:      Material shadows for depth
@@ -365,6 +381,7 @@ Hover Effects:  Color shifts on interactive elements
 ## Responsive Design Breakdown
 
 ### Mobile (< 600px)
+
 ```
 ┌──────────────────────────┐
 │ ⬆️ Import Exam Centers   │
@@ -381,6 +398,7 @@ Hover Effects:  Color shifts on interactive elements
 ```
 
 ### Tablet (600-900px)
+
 ```
 ┌──────────────────────────────────┐
 │ ⬆️ Import Exam Centers           │
@@ -395,6 +413,7 @@ Hover Effects:  Color shifts on interactive elements
 ```
 
 ### Desktop (> 900px)
+
 ```
 ┌─────────────────────────────────────────────────────┐
 │ ⬆️ Import Exam Centers                           [✕]│
@@ -413,18 +432,21 @@ Hover Effects:  Color shifts on interactive elements
 ## Accessibility Features
 
 ### Keyboard Navigation
+
 - Tab through all interactive elements
 - Enter to activate buttons
 - Escape to close modal
 - Arrow keys in dropdowns
 
 ### Screen Reader Support
+
 - Semantic HTML structure
 - ARIA labels on buttons
 - Table header labeling
 - Status indicators announced
 
 ### Visual Indicators
+
 - Clear focus states (blue outline)
 - Color + icon for status (not color alone)
 - Readable font sizes
@@ -435,6 +457,7 @@ Hover Effects:  Color shifts on interactive elements
 ## Error States & Alerts
 
 ### Error Alert Example
+
 ```
 ┌────────────────────────────────────────────┐
 │ [✕] File Upload Failed                     │
@@ -444,6 +467,7 @@ Hover Effects:  Color shifts on interactive elements
 ```
 
 ### Warning Alert Example
+
 ```
 ┌────────────────────────────────────────────┐
 │ [⚠️] Partial Import Success                 │
@@ -453,6 +477,7 @@ Hover Effects:  Color shifts on interactive elements
 ```
 
 ### Success Alert Example
+
 ```
 ┌────────────────────────────────────────────┐
 │ [✓] Import Complete                        │
@@ -473,6 +498,6 @@ This enhanced CSV Import Modal provides:
 ✅ **Responsive design** for all devices  
 ✅ **Comprehensive error handling** with detailed feedback  
 ✅ **Accessibility** features for all users  
-✅ **Visual feedback** at every step  
+✅ **Visual feedback** at every step
 
 The user experience is smooth, intuitive, and professional!

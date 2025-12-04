@@ -88,7 +88,12 @@ export default function CSVImportModalEnhanced({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [activeStep, setActiveStep] = useState(0);
-  const steps = ["Download Template", "Upload File", "Review & Edit", "Confirm Import"];
+  const steps = [
+    "Download Template",
+    "Upload File",
+    "Review & Edit",
+    "Confirm Import",
+  ];
 
   useEffect(() => {
     setMounted(true);
@@ -100,13 +105,26 @@ export default function CSVImportModalEnhanced({
 
   // Download template
   const handleDownloadTemplate = () => {
-    const csvContent = generateCSVTemplate();
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "exam_centers_import_template.csv";
-    link.click();
-    setActiveStep(1);
+    try {
+      const csvContent = generateCSVTemplate();
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", "exam_centers_import_template.csv");
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setActiveStep(1);
+    } catch (err) {
+      console.error("Error downloading template:", err);
+      setError(
+        "Failed to download template: " +
+          (err instanceof Error ? err.message : String(err))
+      );
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -135,7 +153,10 @@ export default function CSVImportModalEnhanced({
       setPreview(allRows);
       setActiveStep(2);
     } catch (err) {
-      setError("Failed to read CSV file: " + (err instanceof Error ? err.message : "Unknown error"));
+      setError(
+        "Failed to read CSV file: " +
+          (err instanceof Error ? err.message : "Unknown error")
+      );
     }
   };
 
@@ -196,7 +217,9 @@ export default function CSVImportModalEnhanced({
             const errorData = await res.json();
             failed++;
             importErrors.push(
-              `Row: ${centerData.center_name || "Unknown"} - ${errorData.error || "Failed to create"}`
+              `Row: ${centerData.center_name || "Unknown"} - ${
+                errorData.error || "Failed to create"
+              }`
             );
           } else {
             success++;
@@ -224,7 +247,10 @@ export default function CSVImportModalEnhanced({
         }, 2000);
       }
     } catch (err) {
-      setError("Import failed: " + (err instanceof Error ? err.message : "Unknown error"));
+      setError(
+        "Import failed: " +
+          (err instanceof Error ? err.message : "Unknown error")
+      );
       setImporting(false);
     }
   };
@@ -294,11 +320,7 @@ export default function CSVImportModalEnhanced({
         {/* Step 1: Download Template */}
         {activeStep === 0 && (
           <Stack spacing={3}>
-            <Alert
-              icon={<InfoIcon />}
-              severity="info"
-              sx={{ borderRadius: 2 }}
-            >
+            <Alert icon={<InfoIcon />} severity="info" sx={{ borderRadius: 2 }}>
               Download the CSV template to see the correct format
             </Alert>
 
@@ -328,7 +350,8 @@ export default function CSVImportModalEnhanced({
                 startIcon={<DownloadIcon />}
                 onClick={handleDownloadTemplate}
                 sx={{
-                  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  background:
+                    "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                 }}
               >
                 Download Template
@@ -340,11 +363,7 @@ export default function CSVImportModalEnhanced({
         {/* Step 2: Upload File */}
         {activeStep === 1 && (
           <Stack spacing={3}>
-            <Alert
-              icon={<InfoIcon />}
-              severity="info"
-              sx={{ borderRadius: 2 }}
-            >
+            <Alert icon={<InfoIcon />} severity="info" sx={{ borderRadius: 2 }}>
               Select your CSV file to upload
             </Alert>
 
@@ -422,7 +441,8 @@ export default function CSVImportModalEnhanced({
                 variant="contained"
                 disabled={!file}
                 sx={{
-                  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  background:
+                    "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                 }}
               >
                 Next
@@ -434,11 +454,7 @@ export default function CSVImportModalEnhanced({
         {/* Step 3: Review & Edit */}
         {activeStep === 2 && (
           <Stack spacing={3}>
-            <Alert
-              icon={<InfoIcon />}
-              severity="info"
-              sx={{ borderRadius: 2 }}
-            >
+            <Alert icon={<InfoIcon />} severity="info" sx={{ borderRadius: 2 }}>
               Preview your data. Click the edit icon to modify individual rows.
               You can edit and delete rows before importing.
             </Alert>
@@ -458,9 +474,7 @@ export default function CSVImportModalEnhanced({
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: "grey.100" }}>
-                    <TableCell sx={{ fontWeight: 600, width: 50 }}>
-                      #
-                    </TableCell>
+                    <TableCell sx={{ fontWeight: 600, width: 50 }}>#</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Center Name</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Exam Type</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>State</TableCell>
@@ -567,7 +581,8 @@ export default function CSVImportModalEnhanced({
                 variant="contained"
                 onClick={() => setActiveStep(3)}
                 sx={{
-                  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  background:
+                    "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                 }}
               >
                 Next
@@ -586,7 +601,8 @@ export default function CSVImportModalEnhanced({
                   severity="info"
                   sx={{ borderRadius: 2 }}
                 >
-                  Ready to import {preview.length} exam center(s). Click the Import button below to proceed.
+                  Ready to import {preview.length} exam center(s). Click the
+                  Import button below to proceed.
                 </Alert>
 
                 <Card variant="outlined">
@@ -612,7 +628,9 @@ export default function CSVImportModalEnhanced({
                   </CardContent>
                 </Card>
 
-                <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+                <Box
+                  sx={{ display: "flex", gap: 2, justifyContent: "flex-end" }}
+                >
                   <Button
                     variant="outlined"
                     onClick={() => setActiveStep(2)}
@@ -645,11 +663,7 @@ export default function CSVImportModalEnhanced({
                 <Alert
                   severity={result.failed === 0 ? "success" : "warning"}
                   icon={
-                    result.failed === 0 ? (
-                      <CheckCircleIcon />
-                    ) : (
-                      <WarningIcon />
-                    )
+                    result.failed === 0 ? <CheckCircleIcon /> : <WarningIcon />
                   }
                   sx={{ borderRadius: 2 }}
                 >
@@ -662,7 +676,11 @@ export default function CSVImportModalEnhanced({
 
                 {result.errors.length > 0 && (
                   <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                    <Typography
+                      variant="subtitle2"
+                      fontWeight={600}
+                      gutterBottom
+                    >
                       Errors ({result.errors.length})
                     </Typography>
                     <Box
@@ -690,7 +708,9 @@ export default function CSVImportModalEnhanced({
                   </Paper>
                 )}
 
-                <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+                <Box
+                  sx={{ display: "flex", gap: 2, justifyContent: "flex-end" }}
+                >
                   <Button
                     variant="contained"
                     onClick={onClose}
@@ -769,9 +789,7 @@ function EditingRow({ row, rowIndex, onSave, onCancel }: EditingRowProps) {
         <FormControl size="small" fullWidth>
           <Select
             value={editRow.status || "active"}
-            onChange={(e) =>
-              setEditRow({ ...editRow, status: e.target.value })
-            }
+            onChange={(e) => setEditRow({ ...editRow, status: e.target.value })}
           >
             <MenuItem value="active">Active</MenuItem>
             <MenuItem value="inactive">Inactive</MenuItem>

@@ -42,7 +42,10 @@ async function checkAuth(request: NextRequest) {
   if (!session?.user) {
     return {
       authorized: false,
-      response: new NextResponse("Unauthorized", { status: 401 }),
+      response: NextResponse.json(
+        { error: "Unauthorized - Please sign in" },
+        { status: 401 }
+      ),
     };
   }
 
@@ -53,7 +56,14 @@ async function checkAuth(request: NextRequest) {
   if (!isAdmin) {
     return {
       authorized: false,
-      response: new NextResponse("Forbidden", { status: 403 }),
+      response: NextResponse.json(
+        { 
+          error: "Forbidden - Admin access required",
+          userRoles: userRoles,
+          message: "You need 'admin' or 'super_admin' role to access this resource"
+        },
+        { status: 403 }
+      ),
     };
   }
 

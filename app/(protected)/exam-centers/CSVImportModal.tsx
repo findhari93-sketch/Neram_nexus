@@ -242,11 +242,7 @@ export default function CSVImportModal({
         {/* Step 1: Download Template */}
         {activeStep === 0 && (
           <Stack spacing={3}>
-            <Alert
-              icon={<InfoIcon />}
-              severity="info"
-              sx={{ borderRadius: 2 }}
-            >
+            <Alert icon={<InfoIcon />} severity="info" sx={{ borderRadius: 2 }}>
               Download the CSV template to see the correct format and
               instructions
             </Alert>
@@ -279,7 +275,8 @@ export default function CSVImportModal({
                 startIcon={<DownloadIcon />}
                 onClick={handleDownloadTemplate}
                 sx={{
-                  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  background:
+                    "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                 }}
               >
                 Download Template
@@ -291,11 +288,7 @@ export default function CSVImportModal({
         {/* Step 2: Upload File */}
         {activeStep === 1 && (
           <Stack spacing={3}>
-            <Alert
-              icon={<InfoIcon />}
-              severity="info"
-              sx={{ borderRadius: 2 }}
-            >
+            <Alert icon={<InfoIcon />} severity="info" sx={{ borderRadius: 2 }}>
               Select your CSV file to continue
             </Alert>
 
@@ -374,7 +367,8 @@ export default function CSVImportModal({
                 variant="contained"
                 disabled={!file}
                 sx={{
-                  background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                  background:
+                    "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                 }}
               >
                 Next
@@ -401,8 +395,12 @@ export default function CSVImportModal({
                   <Table size="small">
                     <TableHead>
                       <TableRow sx={{ bgcolor: "grey.50" }}>
-                        <TableCell sx={{ fontWeight: 600 }}>Center Name</TableCell>
-                        <TableCell sx={{ fontWeight: 600 }}>Exam Type</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>
+                          Center Name
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>
+                          Exam Type
+                        </TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>State</TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>City</TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
@@ -458,11 +456,7 @@ export default function CSVImportModal({
                 <Alert
                   severity={result.failed === 0 ? "success" : "warning"}
                   icon={
-                    result.failed === 0 ? (
-                      <CheckCircleIcon />
-                    ) : (
-                      <WarningIcon />
-                    )
+                    result.failed === 0 ? <CheckCircleIcon /> : <WarningIcon />
                   }
                   sx={{ borderRadius: 2 }}
                 >
@@ -475,7 +469,11 @@ export default function CSVImportModal({
 
                 {result.errors.length > 0 && (
                   <Paper variant="outlined" sx={{ p: 2 }}>
-                    <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                    <Typography
+                      variant="subtitle2"
+                      fontWeight={600}
+                      gutterBottom
+                    >
                       Errors ({result.errors.length})
                     </Typography>
                     <Box
@@ -516,10 +514,7 @@ export default function CSVImportModal({
           bgcolor: "grey.50",
         }}
       >
-        <Button
-          onClick={onClose}
-          variant={result ? "contained" : "outlined"}
-        >
+        <Button onClick={onClose} variant={result ? "contained" : "outlined"}>
           {result ? "Close" : "Cancel"}
         </Button>
         {!result && activeStep < steps.length - 1 && (

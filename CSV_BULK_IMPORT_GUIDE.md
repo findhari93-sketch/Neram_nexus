@@ -7,12 +7,14 @@ The enhanced CSV Import Modal provides a professional bulk import solution with 
 ## Key Features
 
 ### 1. **4-Step Guided Process**
+
 - **Step 1**: Download Template - Get properly formatted CSV template
 - **Step 2**: Upload File - Select and parse CSV file
 - **Step 3**: Review & Edit - Preview data with inline editing capabilities
 - **Step 4**: Confirm Import - Final review and bulk import
 
 ### 2. **Inline Edit Functionality**
+
 - Click the **Edit** icon on any row to enter edit mode
 - Edit the following fields directly in the table:
   - Center Name
@@ -24,12 +26,14 @@ The enhanced CSV Import Modal provides a professional bulk import solution with 
 - Changes appear immediately in the table
 
 ### 3. **Data Management**
+
 - **Delete Rows**: Remove specific rows from import using the trash icon
 - **Row Validation**: Visual indicators (chips) show data status
 - **Row Counter**: Track total number of records ready for import
 - **Scrollable Table**: Handles large datasets smoothly
 
 ### 4. **Professional UI**
+
 - **Gradient Header**: Modern purple gradient design
 - **Beautiful Material Design**: Consistent with app theme
 - **Responsive Layout**: Works on all screen sizes
@@ -101,21 +105,23 @@ The enhanced CSV Import Modal provides a professional bulk import solution with 
 **Location**: `app/(protected)/exam-centers/CSVImportModalEnhanced.tsx`
 
 **Key Props**:
+
 ```typescript
 interface CSVImportModalProps {
-  onClose: () => void;           // Called when modal closes
-  onImportComplete: () => void;  // Called after successful import
+  onClose: () => void; // Called when modal closes
+  onImportComplete: () => void; // Called after successful import
 }
 ```
 
 **State Management**:
+
 ```typescript
-const [mounted, setMounted] = useState(false);      // Hydration safety
+const [mounted, setMounted] = useState(false); // Hydration safety
 const [file, setFile] = useState<File | null>(null); // Uploaded file
-const [preview, setPreview] = useState<any[]>([]);  // Preview rows with IDs
+const [preview, setPreview] = useState<any[]>([]); // Preview rows with IDs
 const [editingRowId, setEditingRowId] = useState<string | null>(null); // Current edit
 const [editingData, setEditingData] = useState<any>(null); // Edit form data
-const [activeStep, setActiveStep] = useState(0);    // Current step (0-3)
+const [activeStep, setActiveStep] = useState(0); // Current step (0-3)
 ```
 
 ### EditingRow Component
@@ -123,6 +129,7 @@ const [activeStep, setActiveStep] = useState(0);    // Current step (0-3)
 **Inline Edit Row Component** for editing individual rows in the table.
 
 **Features**:
+
 - TextField for text inputs (center_name, state, city)
 - Select dropdown for enum values (exam_type, status)
 - Save/Cancel buttons
@@ -198,22 +205,22 @@ Table re-renders with changes
 
 ### Available Fields for Edit
 
-| Field | Type | Options |
-|-------|------|---------|
-| Center Name | TextField | Any text |
-| Exam Type | Select | NATA, JEE, BOTH |
-| State | TextField | Any state name |
-| City | TextField | Any city name |
-| Status | Select | active, inactive |
+| Field       | Type      | Options          |
+| ----------- | --------- | ---------------- |
+| Center Name | TextField | Any text         |
+| Exam Type   | Select    | NATA, JEE, BOTH  |
+| State       | TextField | Any state name   |
+| City        | TextField | Any city name    |
+| Status      | Select    | active, inactive |
 
 ### Edit Actions
 
-| Action | Button | Effect |
-|--------|--------|--------|
-| Start Edit | Edit Icon (blue) | Row becomes editable |
-| Save Edit | Save Icon (green) | Changes applied, edit mode exits |
+| Action      | Button               | Effect                             |
+| ----------- | -------------------- | ---------------------------------- |
+| Start Edit  | Edit Icon (blue)     | Row becomes editable               |
+| Save Edit   | Save Icon (green)    | Changes applied, edit mode exits   |
 | Cancel Edit | Cancel Icon (orange) | Changes discarded, edit mode exits |
-| Delete Row | Delete Icon (red) | Row removed from import list |
+| Delete Row  | Delete Icon (red)    | Row removed from import list       |
 
 ### Visual Feedback
 
@@ -229,16 +236,19 @@ Table re-renders with changes
 ## Error Handling
 
 ### File Upload Errors
+
 - Invalid CSV format → Shows error alert
 - File read failure → Displays error message
 - No file selected → Disables Next button
 
 ### Data Validation
+
 - Empty required fields → Can be edited before import
 - Invalid exam types → Can be corrected in edit mode
 - Duplicate centers → Warning shown after import
 
 ### Import Errors
+
 - Network failure → Displays error alert
 - API validation error → Shows in error list
 - Partial success → Shows count of successes and failures
@@ -274,18 +284,21 @@ The enhanced modal is imported and used in the exam centers list page:
 import CSVImportModalEnhanced from "./CSVImportModalEnhanced";
 
 // In the component:
-{showCSVModal && (
-  <CSVImportModalEnhanced
-    onClose={() => setShowCSVModal(false)}
-    onImportComplete={() => {
-      setShowCSVModal(false);
-      queryClient.invalidateQueries({ queryKey: ["exam_centers"] });
-    }}
-  />
-)}
+{
+  showCSVModal && (
+    <CSVImportModalEnhanced
+      onClose={() => setShowCSVModal(false)}
+      onImportComplete={() => {
+        setShowCSVModal(false);
+        queryClient.invalidateQueries({ queryKey: ["exam_centers"] });
+      }}
+    />
+  );
+}
 ```
 
 **Page also has hydration fix**:
+
 ```tsx
 const [mounted, setMounted] = useState(false);
 
@@ -302,43 +315,43 @@ if (!mounted) {
 
 ## Material-UI Components Used
 
-| Component | Purpose |
-|-----------|---------|
-| Dialog | Main container |
-| DialogTitle | Header with gradient |
-| DialogContent | Main content area |
-| DialogActions | Action buttons |
-| Stepper | Step indicator |
-| Table | Data preview with editable rows |
-| TextField | Inline edit fields |
-| Select | Dropdown for enum values |
-| Alert | Messages (info, success, error, warning) |
-| Chip | Status indicators |
-| IconButton | Edit, delete, save, cancel buttons |
-| Paper | Containers, file upload area |
-| Card | Info cards, summaries |
-| Stack/Box | Layout components |
-| Typography | Text content |
-| Tooltip | Hover help text |
+| Component     | Purpose                                  |
+| ------------- | ---------------------------------------- |
+| Dialog        | Main container                           |
+| DialogTitle   | Header with gradient                     |
+| DialogContent | Main content area                        |
+| DialogActions | Action buttons                           |
+| Stepper       | Step indicator                           |
+| Table         | Data preview with editable rows          |
+| TextField     | Inline edit fields                       |
+| Select        | Dropdown for enum values                 |
+| Alert         | Messages (info, success, error, warning) |
+| Chip          | Status indicators                        |
+| IconButton    | Edit, delete, save, cancel buttons       |
+| Paper         | Containers, file upload area             |
+| Card          | Info cards, summaries                    |
+| Stack/Box     | Layout components                        |
+| Typography    | Text content                             |
+| Tooltip       | Hover help text                          |
 
 ---
 
 ## Icons Used
 
-| Icon | Use |
-|------|-----|
-| FileUploadIcon | Modal header |
+| Icon            | Use                        |
+| --------------- | -------------------------- |
+| FileUploadIcon  | Modal header               |
 | CloudUploadIcon | Upload area, import button |
-| InfoIcon | Info alerts |
-| ErrorIcon | Error alerts |
-| CheckCircleIcon | Success indicator |
-| WarningIcon | Warning alerts |
-| DownloadIcon | Download template button |
-| CloseIcon | Close modal button |
-| EditIcon | Edit row button |
-| SaveIcon | Save edit button |
-| CancelIcon | Cancel edit button |
-| DeleteIcon | Delete row button |
+| InfoIcon        | Info alerts                |
+| ErrorIcon       | Error alerts               |
+| CheckCircleIcon | Success indicator          |
+| WarningIcon     | Warning alerts             |
+| DownloadIcon    | Download template button   |
+| CloseIcon       | Close modal button         |
+| EditIcon        | Edit row button            |
+| SaveIcon        | Save edit button           |
+| CancelIcon      | Cancel edit button         |
+| DeleteIcon      | Delete row button          |
 
 ---
 
@@ -347,9 +360,11 @@ if (!mounted) {
 ### Endpoints Used
 
 #### POST /api/exam-centers
+
 Creates a new exam center
 
 **Request Body**:
+
 ```typescript
 {
   center_name: string;
@@ -368,6 +383,7 @@ Creates a new exam center
 ```
 
 **Response**:
+
 ```typescript
 {
   id: string;
@@ -377,6 +393,7 @@ Creates a new exam center
 ```
 
 **Error Response**:
+
 ```typescript
 {
   error: string; // Error message
@@ -391,7 +408,7 @@ for (const row of preview) {
     method: "POST",
     body: JSON.stringify(centerData),
   });
-  
+
   if (!res.ok) {
     const errorData = await res.json();
     importErrors.push(`${centerData.center_name} - ${errorData.error}`);
@@ -430,21 +447,20 @@ const steps = [
   "Download Template",
   "Upload File",
   "Review & Edit",
-  "Confirm Import"
+  "Confirm Import",
 ];
 ```
 
 ### Add More Edit Fields
 
 In `EditingRow` component:
+
 ```tsx
 <TableCell>
   <TextField
     size="small"
     value={editRow.newField || ""}
-    onChange={(e) =>
-      setEditRow({ ...editRow, newField: e.target.value })
-    }
+    onChange={(e) => setEditRow({ ...editRow, newField: e.target.value })}
     fullWidth
   />
 </TableCell>
@@ -467,7 +483,9 @@ Modify `validateExamCenters` in `/lib/utils/csv-validator.ts`
 ## Troubleshooting
 
 ### Issue: Hydration Error on Page Load
+
 **Solution**: The page.tsx now has:
+
 ```tsx
 const [mounted, setMounted] = useState(false);
 useEffect(() => setMounted(true), []);
@@ -475,19 +493,25 @@ if (!mounted) return <LoadingState />;
 ```
 
 ### Issue: Edit Changes Not Saving
-**Check**: 
+
+**Check**:
+
 - Click the green checkmark (Save) button
 - Verify the row updates in the table
 - Check browser console for errors
 
 ### Issue: Import Fails Silently
+
 **Debug**:
+
 1. Check network tab for API response
 2. Verify data format in edit mode
 3. Check error messages in result panel
 
 ### Issue: CSV Not Parsing
+
 **Check**:
+
 - CSV file format (comma-separated, proper headers)
 - Required columns present
 - No special characters breaking the file
@@ -538,6 +562,6 @@ The enhanced CSV Import Modal provides:
 ✅ Comprehensive error handling  
 ✅ Hydration-safe implementation  
 ✅ Complete data preview before import  
-✅ Responsive design for all devices  
+✅ Responsive design for all devices
 
 This feature significantly improves the bulk import experience for administrators!

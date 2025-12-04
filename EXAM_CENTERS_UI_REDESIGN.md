@@ -327,21 +327,25 @@ Cards: rgba(255,255,255,0.15) with backdrop-filter
 ### **Component Structure**
 
 #### **Dialog Header**
+
 - **Gradient Background**: Consistent purple gradient (#667eea → #764ba2)
 - **Icon Integration**: FileUploadIcon for visual context
 - **Close Button**: Integrated into header with white color
 - **Subtitle**: Brief explanation of functionality
 
 #### **Step-Based Navigation**
+
 Implemented 3-step stepper for clear progression:
 
 1. **Step 1: Download Template**
+
    - Info alert explaining template benefits
    - Card component listing features
    - Download button with icon
    - Download > Next progression flow
 
 2. **Step 2: Upload File**
+
    - Drag-drop file upload area with cloud icon
    - Visual feedback on file selection
    - File info card showing name and size
@@ -355,6 +359,7 @@ Implemented 3-step stepper for clear progression:
    - Error list with scrollable container
 
 #### **Material-UI Components Used**
+
 - `Dialog`: Main container with responsive sizing
 - `DialogTitle`: Header with icon and close button
 - `DialogContent`: Step content with stepper
@@ -369,6 +374,7 @@ Implemented 3-step stepper for clear progression:
 - `Stack/Box`: Layout components
 
 #### **Visual Enhancements**
+
 - **Gradient Buttons**: Import/Download buttons with gradient background
 - **Icon Buttons**: Proper icon usage throughout
 - **Color-Coded Chips**: Status indicators with semantic colors
@@ -381,23 +387,27 @@ Implemented 3-step stepper for clear progression:
 - **Divider**: Clear section separation
 
 #### **Responsive Design**
+
 - `maxWidth="md"`: Dialog adapts to medium screens
 - `fullWidth`: Fills available space on mobile
 - Stack-based layouts for vertical stacking on small screens
 - Scrollable content area for large tables
 
 #### **State Management**
+
 ```typescript
 const [activeStep, setActiveStep] = useState(0);
 const steps = ["Download Template", "Upload File", "Review & Import"];
 ```
 
 Handlers automatically progress steps:
+
 - `handleDownloadTemplate()` → Step 1 (Upload)
 - `handleFileChange()` → Step 2 (Review)
 - Manual "Next" button for progression
 
 #### **Loading & Result States**
+
 - `importing`: Boolean flag for import progress
 - `result`: Object with success/failed/errors info
 - Result display shows summary and error list
@@ -405,6 +415,7 @@ Handlers automatically progress steps:
 - Warning alert with orange WarningIcon for partial failures
 
 ### **Key Improvements**
+
 - **Consistency**: Now matches list page and form design system
 - **Better UX**: Clear step-by-step guidance
 - **Professional Look**: Modern Material-UI styling

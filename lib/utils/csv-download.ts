@@ -105,28 +105,39 @@ export function downloadCSV(
   csvContent: string,
   filename: string = "exam-centers.csv"
 ): void {
-  // Create blob
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  try {
+    // Create blob
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
 
-  // Create URL
-  const url = URL.createObjectURL(blob);
+    // Create URL
+    const url = URL.createObjectURL(blob);
 
-  // Create link and trigger download
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
+    // Create link and trigger download
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = "hidden";
 
-  // Cleanup
-  URL.revokeObjectURL(url);
+    // Append to body, click, and remove
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Cleanup
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("Error downloading CSV:", error);
+    throw error;
+  }
 }
 
 /**
  * Generate CSV template for import
  */
 export function generateCSVTemplate(): string {
-  const templateData = [
+  const templateData: ExamCenter[] = [
     {
+      id: "template-1",
       exam_type: "NATA",
       state: "Maharashtra",
       city: "Mumbai",
@@ -140,9 +151,9 @@ export function generateCSVTemplate(): string {
       contact_designation: "Center Manager",
       phone_number: "+91-22-12345678",
       email: "contact@mumbaicentre.com",
-      is_confirmed_current_year: "true",
+      is_confirmed_current_year: true,
       status: "active",
-      active_years: "2023;2024;2025",
+      active_years: [2023, 2024, 2025],
       facilities: "Parking; WiFi; Rest Room",
       instructions: "Arrive 15 minutes early",
       landmarks: "Near Railway Station",
@@ -151,6 +162,7 @@ export function generateCSVTemplate(): string {
       description: "Main exam center for Mumbai region",
     },
     {
+      id: "template-2",
       exam_type: "JEE Paper 2",
       state: "Delhi",
       city: "New Delhi",
@@ -164,9 +176,9 @@ export function generateCSVTemplate(): string {
       contact_designation: "Coordinator",
       phone_number: "+91-11-87654321",
       email: "contact@delhicentre.com",
-      is_confirmed_current_year: "false",
+      is_confirmed_current_year: false,
       status: "active",
-      active_years: "2024;2025",
+      active_years: [2024, 2025],
       facilities: "Accessible; WiFi; Cafeteria",
       instructions: "Check ID at entrance",
       landmarks: "Near Metro Station",
@@ -176,7 +188,7 @@ export function generateCSVTemplate(): string {
     },
   ];
 
-  return examCentersToCSV(templateData as unknown as ExamCenter[]);
+  return examCentersToCSV(templateData);
 }
 
 /**
