@@ -42,9 +42,14 @@ export default function DebugAuthPage() {
     setLoading(false);
   };
 
+  // Azure AD stores role as single string in session.user.role
+  const userRole = (session?.user as any)?.role;
   const userRoles = (session?.user as any)?.roles || [];
   const hasAdminRole =
-    userRoles.includes("admin") || userRoles.includes("super_admin");
+    userRole === "admin" ||
+    userRole === "super_admin" ||
+    userRoles.includes("admin") ||
+    userRoles.includes("super_admin");
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "grey.50", p: 4 }}>
@@ -118,7 +123,25 @@ export default function DebugAuthPage() {
 
                 <Box>
                   <Typography variant="caption" color="text.secondary">
-                    Roles
+                    Primary Role (from Azure AD)
+                  </Typography>
+                  <Box sx={{ mt: 1 }}>
+                    <Chip
+                      label={userRole || "None"}
+                      color={
+                        userRole === "admin" || userRole === "super_admin"
+                          ? "success"
+                          : "default"
+                      }
+                      size="medium"
+                      sx={{ fontWeight: 600 }}
+                    />
+                  </Box>
+                </Box>
+
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    All Roles (Azure AD roles array)
                   </Typography>
                   <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
                     {userRoles.length > 0 ? (
@@ -135,8 +158,8 @@ export default function DebugAuthPage() {
                         />
                       ))
                     ) : (
-                      <Typography variant="body2" color="error">
-                        No roles assigned
+                      <Typography variant="body2" color="text.secondary">
+                        No additional roles
                       </Typography>
                     )}
                   </Stack>
@@ -234,34 +257,25 @@ export default function DebugAuthPage() {
         {status === "authenticated" && !hasAdminRole && (
           <Alert severity="info" sx={{ mt: 3 }}>
             <Typography variant="subtitle2" gutterBottom>
-              How to fix: Assign Admin Role
+              How to fix: Assign Admin Role in Azure AD
             </Typography>
             <Typography variant="body2" sx={{ mb: 1 }}>
-              1. Go to your Supabase Dashboard → SQL Editor
+              1. Go to **Azure Portal** → **Azure Active Directory** → **App registrations**
             </Typography>
             <Typography variant="body2" sx={{ mb: 1 }}>
-              2. Run this SQL query (replace with your email):
+              2. Find your app → **App roles**
             </Typography>
-            <Box
-              sx={{
-                p: 1.5,
-                bgcolor: "grey.900",
-                borderRadius: 1,
-                mt: 1,
-                mb: 1,
-              }}
-            >
-              <pre style={{ color: "#00ff00", fontSize: "0.75rem", margin: 0 }}>
-                {`UPDATE auth.users\nSET raw_app_meta_data = raw_app_meta_data || '{"roles": ["admin"]}'::jsonb\nWHERE email = '${
-                  (session?.user as any)?.email || "your-email@example.com"
-                }';`}
-              </pre>
-            </Box>
             <Typography variant="body2" sx={{ mb: 1 }}>
-              3. Sign out and sign in again
+              3. Go to **Enterprise applications** → Your app → **Users and groups**
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              4. Assign yourself the **Admin** or **SuperAdmin.AccessAll** role
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              5. Sign out and sign in again
             </Typography>
             <Typography variant="body2">
-              4. Refresh this page to verify
+              6. Refresh this page to verify
             </Typography>
           </Alert>
         )}

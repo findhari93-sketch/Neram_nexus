@@ -49,9 +49,16 @@ async function checkAuth(request: NextRequest) {
     };
   }
 
+  // Check if user has admin or super_admin role
+  // Azure AD stores role as single string in session.user.role
+  const userRole = (session.user as any).role;
   const userRoles = (session.user as any).roles || [];
+  
   const isAdmin =
-    userRoles.includes("admin") || userRoles.includes("super_admin");
+    userRole === "admin" ||
+    userRole === "super_admin" ||
+    userRoles.includes("admin") ||
+    userRoles.includes("super_admin");
 
   if (!isAdmin) {
     return {
@@ -59,6 +66,7 @@ async function checkAuth(request: NextRequest) {
       response: NextResponse.json(
         { 
           error: "Forbidden - Admin access required",
+          currentRole: userRole,
           userRoles: userRoles,
           message: "You need 'admin' or 'super_admin' role to access this resource"
         },
